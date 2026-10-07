@@ -8,7 +8,22 @@ const donations = [
   ['SOL / USDT SPL / USDC SPL', 'BDCCrRez1yD1RpkAtiqKKDk3BfxPD8P7nkL26jCYrzgL'], ['XRP', 'rNUAhaATFLvosdu9m9M95bupRBtZ8eqpj9'],
   ['TON', 'UQCu6-3yGyQ5dzvcCxr2gobuvx5ddbS9EC690qtey92P5_wX'], ['LTC', 'ltc1q2gs89cfy3mumr7gu9w0zl9rllf80q67m5rmma8']
 ];
-function openModal(id) { $(id).showModal(); }
+function openModal(id) {
+  const d = typeof id === 'string' ? $(id) : id;
+  if (!d) return;
+  closeDrawer();
+  if (typeof d.showModal === 'function') { try { if (!d.open) d.showModal(); return; } catch {} }
+  try { d.setAttribute('open', ''); } catch {}
+}
+// Telegram-style drawer (mobile): full sidebar equipment
+function openDrawer() { try { document.body.classList.add('drawer-open'); $('#scrim').hidden = false; $('#menuBtn').setAttribute('aria-expanded', 'true'); } catch {} }
+function closeDrawer() { try { document.body.classList.remove('drawer-open'); $('#scrim').hidden = true; $('#menuBtn').setAttribute('aria-expanded', 'false'); } catch {} }
+try {
+  $('#menuBtn').onclick = () => (document.body.classList.contains('drawer-open') ? closeDrawer() : openDrawer());
+  $('#scrim').onclick = closeDrawer;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  document.querySelectorAll('.sidebar [data-view], .sidebar #newTransfer').forEach(b => b.addEventListener('click', closeDrawer));
+} catch {}
 function wipeSecrets() {
   for (const sel of ['#phraseInput', '#receivePhrase']) { const el = $(sel); if (el) el.value = ''; }
   pendingText = '';
@@ -20,7 +35,7 @@ function clearClipboardLater(label) {
 }
 function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date()); }
 function addMessage(text, direction = 'outgoing') { const article = document.createElement('article'); article.className = `message ${direction}`; const bubble = document.createElement('div'); bubble.className = 'message-bubble'; bubble.append(document.createTextNode(text)); const stamp = document.createElement('time'); stamp.textContent = `${timeNow()}${direction === 'outgoing' ? '  ✓' : ''}`; bubble.append(stamp); article.append(bubble); $('#messages').querySelector('.welcome-card')?.remove(); $('#messages').append(article); $('#messages').scrollTop = $('#messages').scrollHeight; }
-function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); if (view === 'settings') openModal('#settingsDialog'); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
@@ -48,7 +63,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); do
 $('#showSecurity').onclick = () => openModal('#securityDialog'); $('#learnMore').onclick = () => openModal('#whyDialog'); $('#showAbout').onclick = () => openModal('#aboutDialog'); $('#showDonate').onclick = () => openModal('#donateDialog'); $('#openDonate').onclick = () => { closeAll(); openModal('#donateDialog'); };
 // Keep the in-app summary focused on properties the application can verify.
 // The full threat model remains in SECURITY.md for publication and review.
-$('#securityDialog').querySelector('.modal-content').innerHTML = '<div class="modal-kicker">SECURITY PROPERTIES</div><h2>Built for private offline transfer</h2><div class="guide-grid"><div><b>✈</b><p><strong>Works in airplane mode</strong><small>Android has no Internet permission. Linux accepts the GUI only on this device’s loopback address.</small></p></div><div><b>✓</b><p><strong>Authenticated encryption</strong><small>AES-256-GCM detects changed ciphertext when the correct phrase is used.</small></p></div><div><b>✓</b><p><strong>Phrase stays separate</strong><small>The shared phrase is never included in the QR code or encrypted payload.</small></p></div><div><b>✓</b><p><strong>Local recipient labels</strong><small>Names and notes stay on this device; no account or remote contact service is created.</small></p></div></div><p class="subtle">v1.0.3 · Unlike online messengers: no signal, no account, no server. Needs independent audit before high-risk use.</p>';
+$('#securityDialog').querySelector('.modal-content').innerHTML = '<div class="modal-kicker">SECURITY PROPERTIES</div><h2>Built for private offline transfer</h2><div class="guide-grid"><div><b>✈</b><p><strong>Works in airplane mode</strong><small>Android has no Internet permission. Linux accepts the GUI only on this device’s loopback address.</small></p></div><div><b>✓</b><p><strong>Authenticated encryption</strong><small>AES-256-GCM detects changed ciphertext when the correct phrase is used.</small></p></div><div><b>✓</b><p><strong>Phrase stays separate</strong><small>The shared phrase is never included in the QR code or encrypted payload.</small></p></div><div><b>✓</b><p><strong>Local recipient labels</strong><small>Names and notes stay on this device; no account or remote contact service is created.</small></p></div></div><p class="subtle">v1.0.4 · Unlike online messengers: no signal, no account, no server. Needs independent audit before high-risk use.</p>';
 document.querySelector('.security-score strong').textContent = 'Works in airplane mode';
 document.querySelector('.security-score p').textContent = 'No account, no number, no server';
 // First-run “why different” story. Local only, shows once per device.

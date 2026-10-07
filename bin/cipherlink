@@ -8,7 +8,7 @@ const { webcrypto } = require('node:crypto');
 global.crypto = global.crypto || webcrypto;
 const root = path.resolve(__dirname, '..');
 const { encryptText, decryptText, VERSION } = require(path.join(root, 'core.js'));
-const APP_VERSION = VERSION || require(path.join(root, 'package.json')).version || '1.0.3';
+const APP_VERSION = VERSION || require(path.join(root, 'package.json')).version || '1.0.4';
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
   const index = args.indexOf(flag);

@@ -9,7 +9,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 test('every #id referenced in app.js exists in index.html or is created dynamically', () => {
   const html = read('index.html');
   const js = read('app.js');
-  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'mobileTabs', 'newTransferM', 'highValue', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo']);
+  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'mobileTabs', 'newTransferM', 'highValue', 'menuBtn', 'scrim', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo']);
   const ids = new Set([...js.matchAll(/\$\('#([A-Za-z]+)'\)/g)].map((m) => m[1]));
   for (const id of ids) {
     if (created.has(id)) continue;
@@ -44,4 +44,24 @@ test("mobile tabs mirror desktop views with one shared handler", () => {
   assert.ok(js.includes("function startChat"), "unified startChat missing");
   assert.equal((js.match(/\.onclick = startChat/g) || []).length, 2, "exactly two chat triggers");
   assert.ok(js.includes("highValue"), "high-value toggle missing");
+});
+
+test("mobile bar default hides before media query shows it (no override bug)", () => {
+  const css = read("style.css");
+  const def = css.indexOf("#mobileTabs{display:none}");
+  const media = css.indexOf("@media(max-width:720px)");
+  const flex = css.indexOf("#mobileTabs{display:flex");
+  assert.ok(def !== -1 && media !== -1 && flex !== -1, "mobile bar rules missing");
+  assert.ok(def < media && media < flex, "default must come before media flex");
+  assert.ok(!css.trimEnd().endsWith("#mobileTabs{display:none}"), "trailing override forbidden");
+});
+
+test("telegram drawer exists with full sidebar equipment", () => {
+  const html = read("index.html");
+  const js = read("app.js");
+  const css = read("style.css");
+  assert.ok(html.includes('id="menuBtn"'), "hamburger missing");
+  assert.ok(html.includes('id="scrim"'), "scrim missing");
+  assert.ok(js.includes("drawer-open"), "drawer logic missing");
+  assert.ok(css.includes("body.drawer-open .sidebar"), "drawer css missing");
 });
