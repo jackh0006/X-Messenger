@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=X Messenger
+Comment=Offline encrypted QR messenger
+Exec=/home/mhh06/cipherlink/bin/cipherlink gui
+Icon=/home/mhh06/cipherlink/assets/icon.svg
+Terminal=false
+Categories=Network;Utility;
+StartupNotify=true
