@@ -53,7 +53,7 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
       const certPem = fs.readFileSync(certPath, 'utf8');
       const cert = new (require('node:crypto').X509Certificate)(certPem);
       const info = {
-        version: '1.0.2', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
+        version: '1.0.3', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
         tls: { subject: cert.subject, issuer: cert.issuer, validFrom: cert.validFrom, validTo: cert.validTo, fingerprint256: cert.fingerprint256, san: cert.subjectAltName },
       };
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -101,7 +101,7 @@ server.on('listening', () => {
   if (process.env.X_MESSENGER_ENDPOINT_FILE) {
     fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint, { mode: 0o600 });
   }
-  console.log(`X Messenger 1.0.2 running at ${endpoint} [bind=${bindMode}]`);
+  console.log(`X Messenger 1.0.3 running at ${endpoint} [bind=${bindMode}]`);
   if (bindMode === 'lan') console.warn('LAN mode: observable encrypted TLS on this network (IP/port/sizes visible). Compare cert fingerprint in person.');
   if (bindMode === 'vps') console.warn('VPS mode: provider/DNS/network see domain+IP+sizes; message content stays XM1 end-to-end. Keep Cloudflare grey-cloud (DNS-only) for E2E.');
 });

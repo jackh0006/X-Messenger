@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 (function (root) {
-  const VERSION = '1.0.2';
+  const VERSION = '1.0.3';
   const ITERATIONS = 600000;
   const MAX_TEXT_CHARS = 8000;
   const MAX_PAYLOAD_CHARS = 32768;
