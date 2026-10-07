@@ -9,7 +9,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 test('every #id referenced in app.js exists in index.html or is created dynamically', () => {
   const html = read('index.html');
   const js = read('app.js');
-  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'mobileTabs', 'newTransferM', 'highValue', 'menuBtn', 'scrim', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo']);
+  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'highValue', 'menuBtn', 'scrim', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo']);
   const ids = new Set([...js.matchAll(/\$\('#([A-Za-z]+)'\)/g)].map((m) => m[1]));
   for (const id of ids) {
     if (created.has(id)) continue;
@@ -33,27 +33,19 @@ test('message caps are consistent', () => {
   assert.ok(MAX_TEXT_CHARS >= 900, 'core cap must cover UI cap');
 });
 
-test("mobile tabs mirror desktop views with one shared handler", () => {
+test("hamburger-only mobile nav with one shared handler (no bottom bar)", () => {
   const html = read("index.html");
   const js = read("app.js");
-  assert.ok(html.includes('id="mobileTabs"'), "mobile bar missing");
+  const css = read("style.css");
+  assert.ok(!html.includes("mobileTabs"), "bottom bar must be gone");
+  assert.ok(!css.includes("#mobileTabs"), "bottom bar css must be gone");
+  assert.ok(html.includes('id="menuBtn"'), "hamburger missing");
   for (const v of ["saved", "receive", "settings"]) {
-    const count = (html.match(new RegExp('data-view="' + v + '"', "g")) || []).length;
-    assert.ok(count >= 1, v + " missing");
+    assert.ok(html.includes(`data-view="${v}"`), v + " missing");
   }
   assert.ok(js.includes("function startChat"), "unified startChat missing");
-  assert.equal((js.match(/\.onclick = startChat/g) || []).length, 2, "exactly two chat triggers");
+  assert.equal((js.match(/\.onclick = startChat/g) || []).length, 1, "exactly one chat trigger");
   assert.ok(js.includes("highValue"), "high-value toggle missing");
-});
-
-test("mobile bar default hides before media query shows it (no override bug)", () => {
-  const css = read("style.css");
-  const def = css.indexOf("#mobileTabs{display:none}");
-  const media = css.indexOf("@media(max-width:720px)");
-  const flex = css.indexOf("#mobileTabs{display:flex");
-  assert.ok(def !== -1 && media !== -1 && flex !== -1, "mobile bar rules missing");
-  assert.ok(def < media && media < flex, "default must come before media flex");
-  assert.ok(!css.trimEnd().endsWith("#mobileTabs{display:none}"), "trailing override forbidden");
 });
 
 test("telegram drawer exists with full sidebar equipment", () => {
