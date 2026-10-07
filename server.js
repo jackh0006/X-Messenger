@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');

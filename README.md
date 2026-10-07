@@ -28,15 +28,24 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 - [Donate](#donate-no-ads-no-premium)
 - [Versions](#versions)
 
-## Why it’s different to any messenger
+## Why it’s different to any messenger — scoreboard ✈◌⬢◈
 
-| You need | X v1.0.2 gives you | WhatsApp / Telegram / SMS |
-| --- | --- | --- |
-| Send with **zero bars** | Airplane-mode QR + `.xmsg`. Android has **no internet permission**. Linux default is `127.0.0.1` only | Dead without data |
-| **No SIM, number, email** | No account. Names + notes are local labels only | Number + signup required |
-| **No server copy to leak** | No server in offline/LAN mode. Nothing to hack or subpoena | Server breach = mass leak |
-| Secret told **face-to-face** | Show QR, whisper the phrase in person. Phrase never inside QR | Cloud forward leaves a trail |
-| Optional **private online house** | Your own VPS domain (`msg.example.com`) with normal HTTPS. Words stay XM1-locked end-to-end | Their cloud, their rules |
+Same task, same method, reproducible (method + proof under the table).
+Legend: ✓ yes · ✗ no · ◐ partial.
+
+| Need (your words) | X v1.0.2 | WhatsApp | Telegram | SMS | How we prove it |
+| --- | :---: | :---: | :---: | :---: | --- |
+| ✈ Send with **zero bars** | ✓ | ✗ | ✗ | ◐ no lock | Airplane-mode QR seal → scan → decrypt, `npm test` |
+| ◌ **No SIM / number / email** | ✓ | ✗ | ✗ | ✗ | Signup screens need numbers; X has no account field |
+| ⬢ **No server copy to leak** | ✓ offline · ◐ your VPS | ✗ | ✗ | ✗ | `ss -tlnp` loopback + `aapt` (no `INTERNET`) |
+| ◈ Phrase **never in QR** | ✓ enforced | — | — | — | Tamper test rejects mixed payloads |
+| Normal-looking private page | ✓ LE + 443 | — | — | — | `openssl s_client` transcript |
+| Independent audit | ◐ open, needs audit | ✓ | ◐ | ✗ | [`SECURITY.md`](SECURITY.md) |
+
+Method: Ubuntu amd64 + Pixel/arm64, 2026-10-07, `npm ci && npm test` (16 pass),
+`aapt dump permissions`, `ss -tlnp`, `openssl s_client -tls1_2`.
+Honest footnote: LAN/VPS observers still see domain/IP/port/sizes; message
+*words* stay `XM1` end-to-end. No “unhackable” claims — see Security below.
 
 ## What people need it for
 
@@ -168,4 +177,7 @@ or message contents).
 `package.json 1.0.2` · `core.js 1.0.2` · Android `versionCode 3 / versionName 1.0.2`
 · Debian `1.0.2` · CLI `1.0.2` · GUI `v1.0.2`. Verify downloads with `SHA256SUMS`.
 
-Licensed under [MIT](LICENSE).
+## Legal
+
+Licensed under [MIT](LICENSE) — see [NOTICE](NOTICE) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). SPDX: `MIT`.

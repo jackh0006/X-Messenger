@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 let pendingText = '', currentPayload = '', scanning = false, scanTimer;
 const $ = (s) => document.querySelector(s);
 const { encryptText, decryptText } = XMessengerCrypto;
