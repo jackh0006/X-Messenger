@@ -1,0 +1,148 @@
+<resources>
+    <string name="app_name">Omni Messenger</string>
+    <string name="app_name_short">Omni</string>
+    
+    <!-- Navigation -->
+    <string name="nav_chats">Chats</string>
+    <string name="nav_contacts">Contacts</string>
+    <string name="nav_settings">Settings</string>
+    
+    <!-- Actions -->
+    <string name="action_scan_qr">Scan QR Code</string>
+    <string name="action_add_contact">Add Contact</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_send">Send</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+    <string name="action_save">Save</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_share">Share</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_export">Export</string>
+    <string name="action_import">Import</string>
+    
+    <!-- Dialogs -->
+    <string name="dialog_add_contact_title">Add Contact</string>
+    <string name="dialog_add_contact_message">Enter contact details or scan QR code</string>
+    <string name="dialog_manual_entry">Add Manually</string>
+    <string name="dialog_scan_qr">Scan QR Code</string>
+    <string name="dialog_clear_data_title">Clear All Data</string>
+    <string name="dialog_clear_data_message">This will delete all messages, contacts, and keys. This action cannot be undone.</string>
+    <string name="dialog_confirm">Confirm</string>
+    
+    <!-- Form Fields -->
+    <string name="field_name">Name</string>
+    <string name="field_server">Server Address</string>
+    <string name="field_port">Port</string>
+    <string name="field_username">Username</string>
+    <string name="field_password">Password</string>
+    <string name="field_tunnel_token">Cloudflare Tunnel Token</string>
+    <string name="field_custom_domain">Custom Domain</string>
+    
+    <!-- Placeholders -->
+    <string name="placeholder_name">Enter contact name</string>
+    <string name="placeholder_server">example.com</string>
+    <string name="placeholder_port">443</string>
+    <string name="placeholder_username">username</string>
+    <string name="placeholder_password">password</string>
+    <string name="placeholder_tunnel_token">Enter tunnel token</string>
+    <string name="placeholder_custom_domain">yourdomain.com</string>
+    
+    <!-- Settings -->
+    <string name="settings_general">General</string>
+    <string name="settings_security">Security</string>
+    <string name="settings_network">Network</string>
+    <string name="settings_offline">Offline Transport</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_encryption">Encryption</string>
+    <string name="settings_privacy">Privacy</string>
+    <string name="settings_proxy">Proxy / Tunnel</string>
+    <string name="settings_debug">Debug</string>
+    <string name="settings_about">About</string>
+    
+    <!-- Settings Descriptions -->
+    <string name="settings_dark_mode">Dark Mode</string>
+    <string name="settings_dark_mode_desc">Use dark theme</string>
+    <string name="settings_compact_mode">Compact Mode</string>
+    <string name="settings_compact_mode_desc">Reduce spacing for more content</string>
+    <string name="settings_notifications">Enable Notifications</string>
+    <string name="settings_message_preview">Message Preview</string>
+    <string name="settings_message_preview_desc">Show message content in notifications</string>
+    <string name="settings_cipher_algorithm">Cipher Algorithm</string>
+    <string name="settings_key_rotation">Key Rotation Interval</string>
+    <string name="settings_ephemeral">Ephemeral Messages</string>
+    <string name="settings_ephemeral_desc">Auto-delete messages after reading</string>
+    <string name="settings_clear_data">Clear All Data</string>
+    <string name="settings_clear_data_desc">WARNING: This will delete all messages, contacts, and keys</string>
+    <string name="settings_tunnel_token">Cloudflare Tunnel Token</string>
+    <string name="settings_custom_domain">Custom Domain</string>
+    <string name="settings_qr_code">QR Code</string>
+    <string name="settings_qr_code_desc">Enable QR code for message transfer</string>
+    <string name="settings_nfc">NFC</string>
+    <string name="settings_nfc_desc">Enable NFC for contact exchange</string>
+    <string name="settings_usb">USB/Local Network</string>
+    <string name="settings_usb_desc">Enable direct USB or local network transfer</string>
+    <string name="settings_debug_logging">Debug Logging</string>
+    <string name="settings_export_logs">Export Logs</string>
+    <string name="settings_self_tests">Run Self-Tests</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_license">License</string>
+    <string name="settings_source_code">Source Code</string>
+    
+    <!-- Status -->
+    <string name="status_connected">Connected via Cloudflare Tunnel</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_offline">Offline Mode</string>
+    
+    <!-- Errors -->
+    <string name="error_generic">An error occurred</string>
+    <string name="error_network">Network error</string>
+    <string name="error_permission">Permission denied</string>
+    <string name="error_qr_scan">Failed to scan QR code</string>
+    <string name="error_invalid_qr">Invalid QR code format</string>
+    <string name="error_add_contact">Failed to add contact</string>
+    <string name="error_save_settings">Failed to save settings</string>
+    <string name="error_crypto">Cryptographic operation failed</string>
+    
+    <!-- Success -->
+    <string name="success_contact_added">Contact added successfully</string>
+    <string name="success_settings_saved">Settings saved</string>
+    <string name="success_data_cleared">All data cleared</string>
+    <string name="success_copied">Copied to clipboard</string>
+    
+    <!-- QR Scanner -->
+    <string name="qr_scanner_title">Scan QR Code</string>
+    <string name="qr_scanner_instruction">Point camera at a QR code to scan</string>
+    <string name="qr_camera">Scan from Camera</string>
+    <string name="qr_gallery">Select from Gallery</string>
+    
+    <!-- Chat -->
+    <string name="chat_hint">Type a message…</string>
+    <string name="chat_encrypting">Encrypting…</string>
+    <string name="chat_sending">Sending…</string>
+    <string name="chat_delivered">Delivered</string>
+    <string name="chat_read">Read</string>
+    <string name="chat_failed">Failed</string>
+    <string name="chat_no_messages">No messages yet. Start a conversation!</string>
+    
+    <!-- Contact -->
+    <string name="contact_online">Online</string>
+    <string name="contact_offline">Offline</string>
+    <string name="contact_verified">Verified</string>
+    <string name="contact_unverified">Unverified</string>
+    <string name="contact_fingerprint">Fingerprint</string>
+    <string name="contact_qr_code">QR Code</string>
+    <string name="contact_share_qr">Share Contact QR</string>
+    <string name="contact_remove">Remove Contact</string>
+    
+    <!-- Permissions -->
+    <string name="permission_camera_rationale">Camera permission is required to scan QR codes</string>
+    <string name="permission_storage_rationale">Storage permission is required to save QR code images</string>
+    <string name="permission_notification_rationale">Notification permission is required for message alerts</string>
+</resources>

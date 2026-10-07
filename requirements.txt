@@ -1,0 +1,11 @@
+# OAM runtime deps (Linux app + CLI). Install once; the app itself never touches the network.
+cryptography>=3.4
+pynacl>=1.5
+pqcrypto>=1.0
+argon2-cffi>=21
+qrcode>=7
+Pillow>=9
+pyzbar>=0.1
+opencv-python>=4.5
+numpy>=1.21
+# system package needed for QR decode: libzbar0 (apt install libzbar0)

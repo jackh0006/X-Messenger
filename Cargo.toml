@@ -1,0 +1,86 @@
+[workspace]
+resolver = "2"
+members = [
+  "core/crypto",
+  "core/protocol",
+  "apps/linux",
+]
+
+[workspace.dependencies]
+ring = { version = "0.17", features = ["alloc", "std"] }
+pqcrypto-kem = { version = "0.5", features = ["mlkem768"] }
+pqcrypto-sign = { version = "0.5", features = ["dilithium3"] }
+ed25519-dalek = "2.1"
+x25519-dalek = "2.1"
+p256 = "0.13"
+aes-gcm-siv = "0.10"
+chacha20poly1305 = "0.10"
+aes-gcm = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.5"
+argon2 = "0.5"
+zeroize = { version = "1.7", features = ["derive"] }
+secret-service = "2.0"
+keyring = "1.3"
+
+serde = { version = "1.0", features = ["derive", "std"] }
+serde_json = "1.0"
+ciborium = { version = "0.2", features = ["std"] }
+bincode = { version = "1.3", features = ["serde"] }
+base64 = "0.22"
+hex = "0.4"
+
+zstd = { version = "0.13", features = ["encode", "decode"] }
+crc32fast = "1.3"
+
+qrcodegen = "1.8"
+image = { version = "0.25", features = ["png", "jpeg"] }
+qr-code-generator = "1.0"
+
+tokio = { version = "1.38", features = ["full", "rt-multi-thread", "macros", "sync", "time"] }
+async-trait = "0.1"
+
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json"] }
+tracing-appender = "0.6"
+
+thiserror = "1.0"
+anyhow = "1.0"
+
+clap = { version = "4.5", features = ["derive", "env", "string"] }
+
+gtk4 = { version = "0.9", features = ["v4_10"] }
+libadwaita = { version = "0.6", features = ["v1_4"] }
+relm4 = { version = "0.7", features = ["gtk4", "libadwaita"] }
+
+[workspace.exclude]
+apps = ["android"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"
+
+[profile.release.lto]
+fat = true
+
+[profile.dev]
+debug = true
+overflow-checks = true
+
+[build]
+rustflags = [
+  "-C", "target-cpu=native",
+  "-C", "force-frame-pointers=y",
+  "-Z", "location-detail=none",
+]
+
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,--no-undefined"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-Wl,--no-undefined"]

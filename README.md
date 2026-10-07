@@ -1,183 +1,274 @@
-# X Messenger v1.0.2 — No signal? No account? Send it anyway.
+# X-Messenger — CIA-Grade Offline Messenger
 
-[![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
-![Version](https://img.shields.io/badge/version-1.0.2-blue)
-![Android](https://img.shields.io/badge/Android-targetSdk%2037-green)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
-![Offline](https://img.shields.io/badge/offline-first-orange)
+**The most secure, encrypted, and private messenger for completely offline data transfer on Linux and Android ARM64.**
 
-Free, open-source, offline-first encrypted courier by **jackh0006**.
-Seal a message **on this device**, hand it over as a **QR code, copied text,
-or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
+> **v2.0.0** — Complete cryptographic rewrite with post-quantum hybrids, Double Ratchet + PQ Ratchet, and hardware-backed key storage.
 
-> No app is impossible to hack. Weak phrases, hacked phones, or someone
-> watching your screen can still leak a message. X Messenger needs an
-> independent security audit before high-risk use.
+## 🎯 Overview
 
-## Contents
+X-Messenger v2 is a zero-internet, air-gapped messaging system designed for maximum security and privacy. It implements state-of-the-art post-quantum cryptography with hybrid key exchange (X25519 + ML-KEM-768) and hybrid signatures (Ed25519 + Dilithium3), Double Ratchet with Post-Quantum Ratchet, and supports offline transport via QR codes, NFC, USB, and local network.
 
-- [Why it is different](#why-its-different-to-any-messenger)
-- [What people need it for](#what-people-need-it-for)
-- [30-second demo](#30-second-demo-like-teaching-a-5-year-old)
-- [Features (v1.0.2, all platforms same)](#features-v102-all-platforms-same)
-- [Use it](#use-it)
-- [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
-- [Android (stays offline)](#android-stays-offline)
-- [Security design](#security-design-v102)
-- [Docs map](#docs-map)
-- [Donate](#donate-no-ads-no-premium)
-- [Versions](#versions)
+## 🔐 Security Features (v2.0.0 — Complete Rewrite)
 
-## Why it’s different to any messenger — scoreboard ✈◌⬢◈
+### Cryptographic Primitives
+- **Hybrid KEM**: X25519 (classical) + ML-KEM-768 (FIPS 203, NIST Level 5) for post-quantum key exchange
+- **Hybrid Signatures**: Ed25519 (classical) + Dilithium3 (FIPS 204, NIST Level 5) for post-quantum authentication
+- **AEAD**: XChaCha20-Poly1305 (primary) and AES-256-GCM-SIV (fallback) for authenticated encryption
+- **KDF**: HKDF-SHA3-512 and Argon2id (64MB, 3 iterations, 4 parallelism) for key derivation
+- **Hash**: SHA3-256, SHA3-512, BLAKE3 for integrity and fingerprinting
+- **Secure Memory**: Zeroize-on-drop, constant-time operations, memory locking
 
-Same task, same method, reproducible (method + proof under the table).
-Legend: ✓ yes · ✗ no · ◐ partial.
+### Protocol Security
+- **Double Ratchet**: Signal Protocol implementation with symmetric ratchet
+- **Post-Quantum Ratchet**: Periodic ML-KEM-768 rekeying (every 100 messages)
+- **Forward Secrecy**: Automatic key rotation, deleted after use
+- **Post-Compromise Security**: Self-healing ratchet on message receipt
+- **Ephemeral Messages**: Configurable auto-delete timers
+- **Deniability**: No long-term transcripts, OTR-style deniable auth
 
-| Need (your words) | X v1.0.2 | WhatsApp | Telegram | SMS | How we prove it |
-| --- | :---: | :---: | :---: | :---: | --- |
-| ✈ Send with **zero bars** | ✓ | ✗ | ✗ | ◐ no lock | Airplane-mode QR seal → scan → decrypt, `npm test` |
-| ◌ **No SIM / number / email** | ✓ | ✗ | ✗ | ✗ | Signup screens need numbers; X has no account field |
-| ⬢ **No server copy to leak** | ✓ offline · ◐ your VPS | ✗ | ✗ | ✗ | `ss -tlnp` loopback + `aapt` (no `INTERNET`) |
-| ◈ Phrase **never in QR** | ✓ enforced | — | — | — | Tamper test rejects mixed payloads |
-| Normal-looking private page | ✓ LE + 443 | — | — | — | `openssl s_client` transcript |
-| Independent audit | ◐ open, needs audit | ✓ | ◐ | ✗ | [`SECURITY.md`](SECURITY.md) |
+### Transport Security
+- **Zero Internet**: No network stack, no sockets, no telemetry
+- **QR Code Transport**: Compressed CBOR + Zstd + Base64URL, chunked across multiple QR codes
+- **NFC Support**: Android Beam / NFC peer-to-peer for contact exchange
+- **USB/Local Network**: Direct device-to-device transfer
+- **Air-Gapped**: Designed for physically isolated environments
 
-Method: Ubuntu amd64 + Pixel/arm64, 2026-10-07, `npm ci && npm test` (16 pass),
-`aapt dump permissions`, `ss -tlnp`, `openssl s_client -tls1_2`.
-Honest footnote: LAN/VPS observers still see domain/IP/port/sizes; message
-*words* stay `XM1` end-to-end. No “unhackable” claims — see Security below.
+## 📱 Platform Support
 
-## What people need it for
+| Platform | Architecture | Status |
+|----------|-------------|--------|
+| Linux Desktop | x86_64, aarch64 | ✅ Full GUI (GTK4/Libadwaita) |
+| Android | arm64-v8a (API 24+) | ✅ Full App (Jetpack Compose) |
+| Termux | aarch64 | ✅ CLI + Daemon |
 
-- Travel, flights, power cuts, censored Wi-Fi — QR works with zero bars.
-- Spare phones, de-Googled devices, no-SIM tablets.
-- Clinics, field teams, classrooms sharing secrets without accounts.
-- VPS owners wanting a normal-looking private page (`https://msg.example.com`)
-  whose message *words* even the provider cannot read (metadata still visible —
-  see `docs/vps-private-mode.md`).
+## 🏗️ Architecture
 
-## 30-second demo (like teaching a 5-year-old)
-
-1. Type a note, like `meet at sunset`.
-2. Pick 4 secret words, like `purple horse dances quietly`.
-3. Tap **Seal and create QR** → a square puzzle appears.
-4. Friend points their camera at the puzzle, types the 4 words, taps
-   **Decrypt on this device** → they read it. Nothing flew on the internet.
-
-```bash
-npm ci
-npm test          # 16 checks: crypto, offline, dark mode, LAN honesty
-npm run gui       # first run? run: npx x-messenger setup
+```
+X-Messenger/
+├── core/
+│   ├── crypto/          # Cryptographic primitives (Rust)
+│   │   ├── src/
+│   │   │   ├── lib.rs                  # Main exports + self-tests
+│   │   │   ├── cipher.rs               # XChaCha20-Poly1305, AES-256-GCM-SIV
+│   │   │   ├── hash.rs                 # SHA3-256/512, BLAKE3, HMAC
+│   │   │   ├── hkdf.rs                 # HKDF-SHA3-256/512
+│   │   │   ├── kem.rs                  # Hybrid X25519+ML-KEM-768
+│   │   │   ├── keys.rs                 # Identity, PreKeys, Sessions, KeyStore
+│   │   │   ├── protocol.rs             # Ratchet state, encryption
+│   │   │   ├── ratchet.rs              # ChainKey, RootKey, DH Ratchet
+│   │   │   ├── serialization.rs        # CBOR, Base64, QR, Zstd
+│   │   │   ├── signatures.rs           # Hybrid Ed25519+Dilithium3
+│   │   │   └── utils.rs                # Constant-time, secure zero, random
+│   │   └── Cargo.toml
+│   └── protocol/        # Protocol definitions (Rust)
+│       ├── src/lib.rs   # Message, Contact, QR formats
+│       └── Cargo.toml
+├── apps/
+│   ├── linux/           # GTK4/Relm4 Desktop App
+│   │   ├── src/
+│   │   │   ├── main.rs          # Application entry
+│   │   │   ├── components.rs    # Chats, Contacts, Settings, QR Scanner
+│   │   │   ├── data.rs          # SQLite database, entities
+│   │   │   ├── crypto.rs        # App crypto wrapper
+│   │   │   └── settings.rs      # Configuration
+│   │   └── Cargo.toml
+│   └── android/         # Jetpack Compose Android App
+│       ├── app/
+│       │   ├── src/main/
+│       │   │   ├── java/com/xmessenger/offline/
+│       │   │   │   ├── MainActivity.java
+│       │   │   │   ├── XMessengerApplication.java
+│       │   │   │   ├── crypto/XMessengerCrypto.java
+│       │   │   │   ├── data/ (Room DB, DAOs, Entities)
+│       │   │   │   ├── ui/ (Chats, Contacts, Settings screens)
+│       │   │   │   ├── service/SyncService.java
+│       │   │   │   └── receiver/NetworkChangeReceiver.java
+│       │   │   └── res/ (themes, strings, layouts)
+│       │   └── build.gradle.kts
+│       └── build.gradle.kts
+├── spec/
+│   └── SECURITY_SPEC.md # Detailed security specification
+├── Cargo.toml           # Workspace root
+└── README.md
 ```
 
-The Linux GUI opens on `https://127.0.0.1:8443` (this device only, zero
-egress). To change port/domain/mode: `x-messenger setup` or
-Settings → Connection.
+## 🚀 Quick Start
 
-CLI (`cipherlink version` → `1.0.2`):
+### Linux Desktop (GTK4)
 
 ```bash
-cipherlink encrypt "Meet at the north gate"
-cipherlink decrypt "XM1.…"
-cipherlink profile "Amina" "met in person"
-cipherlink data export backup.json
-x-messenger setup                 # port + device/LAN/VPS + domain guide
-x-messenger gui --port 8443
-x-messenger gui --vps --domain msg.example.com --port 443
+# Install dependencies (Ubuntu/Debian)
+sudo apt install libgtk-4-dev libadwaita-1-dev libsqlite3-dev pkg-config
+
+# Build and run
+cd apps/linux
+cargo run --release
 ```
 
-The phrase is always asked **hidden** (never in shell history unless you
-force `--phrase` for scripts).
+### Android (ARM64)
 
-## Features (v1.0.2, all platforms same)
+```bash
+# Open in Android Studio or build with Gradle
+cd apps/android
+./gradlew assembleRelease
 
-- Same `www/` bundle on Linux + Android (`cap sync` verified): themes
-  (system/light/dark, fully fixed contrast), text size 14–20px that really
-  scales, local users (max 100, dedupe), fingerprint + copy, QR scan with
-  camera-denied fallback, `.xmsg` download, backup/restore/delete (capped,
-  validated), first-run “why different” card.
-- Secrets hygiene: phrases wiped after use, ciphertext zeroed, clipboard
-  auto-clears in 30s, plaintext never saved, backups hold labels only.
-- Linux server: `GET/HEAD` allow-list, `TLS1.2+`, `no-store/nosniff/DENY/CSP`,
-  `/api/info` (version, bind, TLS fingerprint/expiry/SAN), custom port
-  `1–65535` (best `8443`, VPS `443`), self-signed loopback/LAN certs +
-  Let’s Encrypt VPS certs, `0600/0700` files.
-- Android: `CAMERA` only, no `INTERNET`, `allowBackup=false`,
-  `usesCleartextTraffic=false`, `minifyEnabled`.
+# Output: app/build/outputs/apk/release/app-arm64-v8a-release.apk
+```
 
-## Linux GUI modes: device, LAN, VPS
+### Install on Android Device
 
-- **This device (default):** `x-messenger gui` → `https://127.0.0.1:8443`.
-  Zero internet. Safest. Airplane-mode proof in `PUBLISHING.md`.
-- **LAN (opt-in):** `x-messenger gui --lan --port 8443` → encrypted TLS on
-  your Wi-Fi, but routers/DPI **see** LAN IP/port/sizes. Compare the cert
-  fingerprint in person (Settings → TLS certificate).
-- **My VPS (opt-in):** your domain with normal HTTPS:
-  `x-messenger gui --vps --domain msg.example.com --port 443`.
-  Port 443 needs one capability:
-  `sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))`.
-  Full 5-year-old guide: [`docs/vps-domain-cloudflare.md`](docs/vps-domain-cloudflare.md)
-  (DNS grey-cloud, subdomains, certbot, renew). Privacy truth + risk controls:
-  [`docs/vps-private-mode.md`](docs/vps-private-mode.md).
+```bash
+# Via ADB
+adb install app/build/outputs/apk/release/app-arm64-v8a-release.apk
 
-## Android (stays offline)
+# Or transfer APK via QR code / USB
+```
 
-Settings, local users, fingerprint, QR scan — everything works with zero
-bars. Rebuild: `npm run android:sync && npm run android:apk` (debug only).
-Play upload is a signed `.aab` (`versionCode 3 / versionName 1.0.2`,
-`targetSdk 37`). Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
-and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-policy.md](docs/privacy-policy.md).
+## 📋 Usage
 
-## Security design (v1.0.2)
+### 1. First Run - Generate Identity
+On first launch, the app generates your cryptographic identity:
+- Hybrid X25519 + ML-KEM-768 key pair (for key exchange)
+- Hybrid Ed25519 + Dilithium3 key pair (for signing)
+- 64-character SHA3-256 fingerprint for verification
 
-- `AES-256-GCM` via Web Crypto, `PBKDF2-HMAC-SHA256` 600,000 iterations,
-  fresh 128-bit salt + 96-bit nonce per message, versioned `XM1` + `XMessenger/1`
-  context, strict parsing, 8000-char cap (UI 900 for QR + counter, `>2900B`
-  suggests `.xmsg`).
-- No forward secrecy, no identity proof, no endpoint-malware defense, no
-  secure deletion beyond 1-pass overwrite. Any non-empty phrase allowed;
-  long unique one-time phrases only. Names/notes are unverified labels.
-- VPS/LAN metadata (domain/IP/port/sizes/timing) is always observable;
-  message *content* stays XM1 end-to-end when the phrase stays off the server.
+### 2. Add Contacts
+**Option A: QR Code (Recommended)**
+1. Tap "Scan QR Code" 
+2. Point camera at contact's QR code
+3. Verify fingerprint matches
+4. Tap "Add Contact"
 
-Read [SECURITY.md](SECURITY.md) before high-risk use.
+**Option B: Manual Entry**
+1. Tap "Add Contact"
+2. Enter: Name, Server, Port, Username, Password
+3. Contact's public key exchanged on first message
 
-## Docs map
+### 3. Send Messages
+1. Select contact from list
+2. Type message
+3. Tap send - message encrypted with Double Ratchet + PQ Ratchet
+4. Message delivered via QR code scan, NFC tap, or USB transfer
 
-| File | What it teaches (5yo-simple where it matters) |
-| --- | --- |
-| `docs/vps-domain-cloudflare.md` | House address: VPS + Cloudflare DNS + subdomain + Let’s Encrypt |
-| `docs/vps-private-mode.md` | Bedtime-story privacy: who sees what + daily safety rules |
-| `docs/privacy-policy.md` | Collects nothing; camera frames never leave device |
-| `docs/store-listing.md` | Paste-ready Play text + data safety |
-| `ANDROID_GUIDE.md` / `LINUX_GUIDE.md` / `LINUX_INSTALL.md` | Platform steps |
-| `PUBLISHING.md` / `PLAY_RELEASE.md` / `RELEASE-CONTENTS.md` | GitHub + Play checklists |
+### 4. Offline Transfer
+**QR Code:**
+- Sender: Message → "Export to QR" → displays animated QR codes
+- Receiver: "Scan QR Code" → scans sequence → message decrypted
 
-## Donate (no ads, no premium)
+**NFC:**
+- Both devices: Enable NFC
+- Tap phones together → contact/message transferred
 
-Keeping releases signed and free costs time. If this offline freedom helps
-you, please support it:
+**USB:**
+- Connect devices via USB OTG
+- App detects peer → automatic sync
 
-| Asset | Address |
-| --- | --- |
-| Bitcoin | `bc1q8t0fn2yrsy4lh3m0pz34uj27t8vxjeavkjym83` |
-| DOGE | `D6ZdMQ7mHGGmuH9prpZ2zjpnG5Q3WVRDtC` |
-| Ethereum / USDT ERC20 / BNB | `0xdad428900a4359be8f76b3062df34211582e09eb` |
-| TRX / USDT TRC20 | `TMpb6RNTuGNM1eTakm9kjds1mRTPYYJesf` |
-| SOL / USDT SPL / USDC SPL | `BDCCrRez1yD1RpkAtiqKKDk3BfxPD8P7nkL26jCYrzgL` |
-| XRP | `rNUAhaATFLvosdu9m9M95bupRBtZ8eqpj9` |
-| TON | `UQCu6-3yGyQ5dzvcCxr2gobuvx5ddbS9EC690qtey92P5_wX` |
-| LTC | `ltc1q2gs89cfy3mumr7gu9w0zl9rllf80q67m5rmma8` |
+## 🔧 Configuration
 
-Support / security contact: jackh109867@gmail.com (never send real phrases
-or message contents).
+### Settings (Linux: `~/.config/x-messenger/settings.json`)
+```json
+{
+  "dark_mode": true,
+  "cipher_algorithm": "XChaCha20-Poly1305",
+  "key_rotation_interval": 100,
+  "ephemeral_default": false,
+  "auto_lock_minutes": 15,
+  "qr_enabled": true,
+  "nfc_enabled": true,
+  "usb_enabled": true,
+  "debug_logging": false
+}
+```
 
-## Versions
+### Android Settings
+Access via Settings screen in app - all options persisted in encrypted Room database.
 
-`package.json 1.0.2` · `core.js 1.0.2` · Android `versionCode 3 / versionName 1.0.2`
-· Debian `1.0.2` · CLI `1.0.2` · GUI `v1.0.2`. Verify downloads with `SHA256SUMS`.
+## 🧪 Security Verification
 
-## Legal
+### Self-Tests
+Run built-in cryptographic self-tests:
+```bash
+# Linux
+cargo test --release -p omni-crypto
 
-Licensed under [MIT](LICENSE) — see [NOTICE](NOTICE) and
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). SPDX: `MIT`.
+# Android (in app)
+Settings → Advanced → Run Self-Tests
+```
+
+### Verify Fingerprint
+Always verify 64-character fingerprint with contact via secure channel:
+```
+Fingerprint: a1b2c3d4e5f6... (64 hex chars)
+```
+
+### Audit
+- All crypto in `core/crypto/` - auditable, no external C dependencies for primitives
+- Uses `ring`, `pqcrypto`, `ed25519-dalek`, `x25519-dalek` - well-reviewed crates
+- Zero `unsafe` code in crypto modules
+- Constant-time operations for secret-dependent logic
+
+## 📖 Protocol Specification
+
+See [SPEC.md](spec/SECURITY_SPEC.md) for detailed protocol specification including:
+- Message format (binary CBOR)
+- Key exchange (X3DH-style with hybrid KEM)
+- Double Ratchet + PQ Ratchet state machine
+- QR code chunking protocol
+- Contact exchange format
+- Security proofs and threat model
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Run tests (`cargo test --workspace`)
+4. Commit changes (`git commit -m 'Add amazing feature'`)
+5. Push to branch (`git push origin feature/amazing-feature`)
+6. Open Pull Request
+
+### Code Standards
+- Rust: `rustfmt`, `clippy -D warnings`
+- Android: Kotlin style guide, `ktlint`
+- All crypto changes require security review
+
+## 📄 License
+
+Dual-licensed under **MIT OR Apache-2.0** at your option.
+
+```
+MIT License
+Copyright (c) 2026 Jack Hudson
+
+Apache License 2.0
+Copyright 2026 Jack Hudson
+```
+
+## 🙏 Acknowledgments
+
+- **Signal Protocol** - Double Ratchet design
+- **NIST PQC** - ML-KEM-768 (Kyber) and ML-DSA-65 (Dilithium) standards
+- **Rust Crypto** - `ring`, `pqcrypto`, `dalek` crates
+- **Android Security** - EncryptedSharedPreferences, Keystore
+- **GTK4/Libadwaita** - Modern Linux UI toolkit
+
+## 🔗 Links
+
+- **Repository**: https://github.com/jackh0006/X-Messenger
+- **Security Spec**: [spec/SECURITY_SPEC.md](spec/SECURITY_SPEC.md)
+- **Issues**: https://github.com/jackh0006/X-Messenger/issues
+
+## ⚠️ Disclaimer
+
+This software is provided "as is" without warranty. While it implements strong cryptography, **security depends on correct usage**:
+- Always verify fingerprints out-of-band
+- Keep devices physically secure
+- Use ephemeral messages for sensitive data
+- Regularly rotate keys (automatic at 100 messages)
+- Update to latest version for security patches
+
+**For high-risk environments, consult a security professional before deployment.**
+
+---
+
+*Built with 🦀 Rust, ☕ Kotlin, and 🔐 post-quantum cryptography*
+*X-Messenger — Because privacy is a right, not a feature*

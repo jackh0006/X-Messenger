@@ -1,0 +1,86 @@
+[package]
+name = "x-messenger"
+version = "2.0.0"
+edition = "2021"
+description = "CIA-Grade Offline Messenger - Linux Desktop Application"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jackh0006/X-Messenger"
+categories = ["command-line-utilities", "cryptography", "network-programming"]
+keywords = ["messenger", "offline", "encryption", "post-quantum", "qr-code"]
+
+[dependencies]
+x-messenger-crypto = { path = "../../core/crypto" }
+x-messenger-protocol = { path = "../../core/protocol" }
+
+# Workspace dependencies
+ring = { workspace = true, features = ["alloc", "std"] }
+pqcrypto-kem = { workspace = true, features = ["mlkem768"] }
+pqcrypto-sign = { workspace = true, features = ["dilithium3"] }
+ed25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+p256 = { workspace = true }
+aes-gcm-siv = { workspace = true }
+chacha20poly1305 = { workspace = true }
+aes-gcm = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+blake3 = { workspace = true }
+argon2 = { workspace = true }
+zeroize = { workspace = true, features = ["derive"] }
+secret-service = { workspace = true }
+keyring = { workspace = true }
+
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true }
+ciborium = { workspace = true, features = ["std"] }
+bincode = { workspace = true, features = ["serde"] }
+base64 = { workspace = true }
+hex = { workspace = true }
+
+zstd = { workspace = true, features = ["encode", "decode"] }
+crc32fast = { workspace = true }
+
+qrcodegen = { workspace = true }
+image = { workspace = true, features = ["png", "jpeg"] }
+qr-code-generator = { workspace = true }
+
+tokio = { workspace = true, features = ["full", "rt-multi-thread", "macros", "sync", "time"] }
+async-trait = { workspace = true }
+
+tracing = { workspace = true, features = ["std"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter", "json"] }
+tracing-appender = { workspace = true }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+clap = { workspace = true, features = ["derive", "env", "string"] }
+
+gtk4 = { workspace = true, features = ["v4_10"] }
+libadwaita = { workspace = true, features = ["v1_4"] }
+relm4 = { workspace = true, features = ["gtk4", "libadwaita"] }
+
+arrayref = "0.3"
+getrandom = { version = "0.2", features = ["std"] }
+
+[features]
+default = ["cli", "gui"]
+cli = []
+gui = []
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"
+
+[[bin]]
+name = "x-messenger"
+path = "src/main.rs"
+
+[lib]
+name = "x_messenger"
+path = "src/lib.rs"
+doctest = false

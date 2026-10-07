@@ -1,0 +1,113 @@
+<resources>
+    <!-- Base application theme -->
+    <style name="Theme.OfflineMessenger" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary brand color -->
+        <item name="colorPrimary">@color/purple_700</item>
+        <item name="colorPrimaryVariant">@color/purple_200</item>
+        <item name="colorOnPrimary">@color/white</item>
+        
+        <!-- Secondary brand color -->
+        <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorSecondaryVariant">@color/teal_200</item>
+        <item name="colorOnSecondary">@color/black</item>
+        
+        <!-- Status bar color -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        
+        <!-- Navigation bar color -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        
+        <!-- Background -->
+        <item name="android:windowBackground">@color/background</item>
+        
+        <!-- Typography -->
+        <item name="textAppearanceHeadlineLarge">@style/TextAppearance.OfflineMessenger.HeadlineLarge</item>
+        <item name="textAppearanceHeadlineMedium">@style/TextAppearance.OfflineMessenger.HeadlineMedium</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.OfflineMessenger.TitleLarge</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.OfflineMessenger.BodyLarge</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.OfflineMessenger.LabelLarge</item>
+    </style>
+
+    <!-- No Action Bar variant -->
+    <style name="Theme.OfflineMessenger.NoActionBar" parent="Theme.OfflineMessenger">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <!-- Splash Screen Theme -->
+    <style name="Theme.OfflineMessenger.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/purple_700</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.OfflineMessenger</item>
+    </style>
+
+    <!-- Text Appearances -->
+    <style name="TextAppearance.OfflineMessenger.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="fontFamily">@font/inter_bold</item>
+        <item name="android:textSize">32sp</item>
+        <item name="android:fontWeight">700</item>
+    </style>
+
+    <style name="TextAppearance.OfflineMessenger.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:fontWeight">600</item>
+    </style>
+
+    <style name="TextAppearance.OfflineMessenger.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="fontFamily">@font/inter_semibold</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:fontWeight">600</item>
+    </style>
+
+    <style name="TextAppearance.OfflineMessenger.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
+        <item name="fontFamily">@font/inter_regular</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:fontWeight">400</item>
+    </style>
+
+    <style name="TextAppearance.OfflineMessenger.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="fontFamily">@font/inter_medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontWeight">500</item>
+    </style>
+
+    <!-- Custom Colors -->
+    <color name="purple_700">#7C3AED</color>
+    <color name="purple_200">#DDD6FE</color>
+    <color name="teal_200">#5EEAD4</color>
+    <color name="background">#0F0F1A</color>
+    <color name="surface">#1A1A2E</color>
+    <color name="surface_variant">#252542</color>
+    <color name="on_background">#F8FAFC</color>
+    <color name="on_surface">#E2E8F0</color>
+    <color name="on_surface_variant">#94A3B8</color>
+    <color name="primary">#7C3AED</color>
+    <color name="primary_variant">#A855F7</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="secondary">#06B6D4</color>
+    <color name="secondary_variant">#22D3EE</color>
+    <color name="on_secondary">#000000</color>
+    <color name="error">#EF4444</color>
+    <color name="on_error">#FFFFFF</color>
+    <color name="success">#22C55E</color>
+    <color name="warning">#F59E0B</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="green">#22C55E</color>
+    <color name="orange">#F59E0B</color>
+    <color name="red">#EF4444</color>
+
+    <!-- Chat Bubble Colors -->
+    <color name="bubble_sent">#7C3AED</color>
+    <color name="bubble_sent_text">#FFFFFF</color>
+    <color name="bubble_received">#252542</color>
+    <color name="bubble_received_text">#E2E8F0</color>
+
+    <!-- Online/Offline Indicators -->
+    <color name="online_indicator">#22C55E</color>
+    <color name="offline_indicator">#94A3B8</color>
+    <color name="away_indicator">#F59E0B</color>
+</resources>
