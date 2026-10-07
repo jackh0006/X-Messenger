@@ -1,0 +1,10 @@
+{
+  "name": "X Messenger — Offline",
+  "short_name": "X Messenger",
+  "description": "Private offline QR courier",
+  "display": "standalone",
+  "start_url": "/",
+  "background_color": "#10182b",
+  "theme_color": "#10182b",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

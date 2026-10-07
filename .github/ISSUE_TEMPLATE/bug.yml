@@ -1,0 +1,24 @@
+name: Bug report
+description: Something looks wrong (no secrets please!)
+body:
+  - type: input
+    id: version
+    attributes: {label: App version, placeholder: "1.0.2"}
+    validations: {required: true}
+  - type: dropdown
+    id: where
+    attributes: {label: Where?, options: [Linux GUI, Linux CLI, Android APK, Docs]}
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes: {label: What happened (simple words)?}
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes: {label: Steps (1, 2, 3)}
+    validations: {required: true}
+  - type: checkboxes
+    id: nosecrets
+    attributes:
+      options: [{label: I did NOT paste phrases, real messages, keys, or tokens}]
+    validations: {required: true}

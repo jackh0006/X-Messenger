@@ -1,0 +1,10 @@
+Package: x-messenger
+Version: 1.0.2
+Section: utils
+Priority: optional
+Architecture: all
+Depends: nodejs, openssl
+Maintainer: jackh0006 <jackh109867@gmail.com>
+Description: X Messenger offline encrypted QR courier
+ X Messenger encrypts local messages for QR, text, and file transfer.
+ It has no service, account, or Internet permission in its Android counterpart.

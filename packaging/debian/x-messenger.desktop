@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=X Messenger
+Comment=Offline encrypted QR messenger
+Exec=x-messenger gui
+Icon=x-messenger
+Terminal=false
+Categories=Utility;Network;
+StartupNotify=true
