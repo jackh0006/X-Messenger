@@ -369,11 +369,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void checkPermissions() {
         String[] permissions = {
-            Manifest.permission.CAMERA,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.INTERNET,
-            Manifest.permission.ACCESS_NETWORK_STATE
+            Manifest.permission.CAMERA
         };
 
         for (String permission : permissions) {

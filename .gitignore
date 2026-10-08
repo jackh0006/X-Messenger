@@ -8,3 +8,7 @@ android/local.properties
 *.jks
 key.properties
 *.log
+target/
+**/__pycache__/
+*.py[cod]
+.idea/

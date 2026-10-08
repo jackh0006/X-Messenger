@@ -1,12 +1,17 @@
-# X-Messenger — CIA-Grade Offline Messenger
+# X Messenger — experimental offline courier
 
-**The most secure, encrypted, and private messenger for completely offline data transfer on Linux and Android ARM64.**
-
-> **v2.0.0** — Complete cryptographic rewrite with post-quantum hybrids, Double Ratchet + PQ Ratchet, and hardware-backed key storage.
+> **Security status:** This v2 rewrite is an unaudited engineering draft. It
+> must not be called CIA-grade, military-grade, unhackable, Signal-compatible,
+> or safe for seed phrases, private keys, recovery codes, or other
+> crown-jewel material. The strict Android flavour has no network transport;
+> release claims require tests, reproducible builds, and an independent audit.
 
 ## 🎯 Overview
 
-X-Messenger v2 is a zero-internet, air-gapped messaging system designed for maximum security and privacy. It implements state-of-the-art post-quantum cryptography with hybrid key exchange (X25519 + ML-KEM-768) and hybrid signatures (Ed25519 + Dilithium3), Double Ratchet with Post-Quantum Ratchet, and supports offline transport via QR codes, NFC, USB, and local network.
+X Messenger is being developed as an offline courier for QR, NFC and
+user-selected file transfer. Its transport is untrusted, and its current
+protocol implementation requires an independent review before any high-risk
+use. Network transport is explicitly outside the strict flavour.
 
 ## 🔐 Security Features (v2.0.0 — Complete Rewrite)
 

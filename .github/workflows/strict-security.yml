@@ -1,0 +1,16 @@
+name: Strict security boundary
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce offline source boundary
+        run: bash scripts/strict-check.sh

@@ -1,11 +1,8 @@
 package com.xmessenger.offline
 
 import android.app.Application
-import android.content.Intent
-import androidx.lifecycle.ProcessLifecycleOwner
 import com.xmessenger.offline.data.AppDatabase
 import com.xmessenger.offline.crypto.XMessengerCrypto
-import com.xmessenger.offline.service.SyncService
 import timber.log.Timber
 
 class XMessengerApplication : Application() {
@@ -28,8 +25,6 @@ class XMessengerApplication : Application() {
         xmCrypto = XMessengerCrypto.getInstance(this)
         xmCrypto?.initialize()
 
-        // Start sync service
-        startSyncService()
     }
 
     fun getDatabase(): AppDatabase {
@@ -38,15 +33,6 @@ class XMessengerApplication : Application() {
 
     fun getCrypto(): XMessengerCrypto {
         return xmCrypto!!
-    }
-
-    private fun startSyncService() {
-        val intent = Intent(this, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
     }
 
     companion object {
