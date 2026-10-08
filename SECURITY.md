@@ -5,7 +5,7 @@ Simple words. Please do not test with real secrets.
 ## Report a problem
 
 - Open a private report: GitHub → Security → Report a vulnerability.
-- Or email the owner via the address on the GitHub profile.
+- Or email jackh109867@gmail.com with version, impact, and reproduction steps.
 - Do NOT open a public issue for a suspected vulnerability.
 - Do NOT include seed phrases, private keys, passwords, tokens, or real
   user data in any report. Use made-up test data only.

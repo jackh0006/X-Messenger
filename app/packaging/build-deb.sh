@@ -32,7 +32,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Depends: libgtk-3-0 | libgtk-3-0t64, libblkid1, liblzma5, libstdc++6, libgcc-s1
-Maintainer: X Messenger contributors
+Maintainer: jackh0006 <jackh109867@gmail.com>
 Description: X Messenger offline shared-interface preview
  This unsigned preview contains no usable cryptographic vault or transport.
 EOF

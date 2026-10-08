@@ -60,3 +60,22 @@ item in `docs/AUDIT_CHECKLIST.md` and `SECURITY_REVIEW.md` is resolved, the
 security core is implemented with reviewed libraries, both platforms build from
 a clean checkout, and an independent security audit is complete. Preview
 packages must say **experimental** and must not accept valuable secrets.
+
+## Donate (no ads, no premium)
+
+Keeping releases signed and free costs time. If this offline freedom helps
+you, please support it:
+
+| Asset | Address |
+| --- | --- |
+| Bitcoin | `bc1q8t0fn2yrsy4lh3m0pz34uj27t8vxjeavkjym83` |
+| DOGE | `D6ZdMQ7mHGGmuH9prpZ2zjpnG5Q3WVRDtC` |
+| Ethereum / USDT ERC20 / BNB | `0xdad428900a4359be8f76b3062df34211582e09eb` |
+| TRX / USDT TRC20 | `TMpb6RNTuGNM1eTakm9kjds1mRTPYYJesf` |
+| SOL / USDT SPL / USDC SPL | `BDCCrRez1yD1RpkAtiqKKDk3BfxPD8P7nkL26jCYrzgL` |
+| XRP | `rNUAhaATFLvosdu9m9M95bupRBtZ8eqpj9` |
+| TON | `UQCu6-3yGyQ5dzvcCxr2gobuvx5ddbS9EC690qtey92P5_wX` |
+| LTC | `ltc1q2gs89cfy3mumr7gu9w0zl9rllf80q67m5rmma8` |
+
+Support / security contact: jackh109867@gmail.com (never send real phrases
+or message contents).

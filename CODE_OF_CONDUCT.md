@@ -8,5 +8,5 @@ Security reports stay private until fixed.
 
 Full text: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
 
-Problems: contact the repository owner via GitHub. The owner may remove
+Problems: contact the repository owner at jackh109867@gmail.com. The owner may remove
 comments, close issues, or block accounts to protect the community.

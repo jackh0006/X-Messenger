@@ -11,7 +11,7 @@ human review and, before real secret use, an independent audit.
 ```bash
 git clone https://github.com/jackh0006/X-Messenger.git
 cd X-Messenger
-git switch codex/v2-security-remediation
+git switch security-remediation
 git switch -c work/one-small-task
 ```
 
@@ -30,13 +30,12 @@ Example local-only config template (do not commit real values):
 
 ```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
   "model": "YOUR_PROVIDER/YOUR_MODEL",
   "small_model": "YOUR_PROVIDER/YOUR_SMALL_MODEL"
 }
 ```
 
-See `opencode.jsonc.example` in the repo root. Keep your real file local.
+See `agent-config.example.jsonc` in the repo root. Keep your real file local.
 
 ## 3. Paste this at the start of every session
 

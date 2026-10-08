@@ -1,0 +1,7 @@
+{
+  // Example coding-agent config. Copy to your agent's own config file
+  // in your home directory. Never commit real keys or tokens.
+  // Pick values from your agent's model picker. Do not copy unverified names.
+  "model": "YOUR_PROVIDER/YOUR_MODEL",
+  "small_model": "YOUR_PROVIDER/YOUR_SMALL_MODEL"
+}
