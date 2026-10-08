@@ -29,11 +29,11 @@ zeroize = { workspace = true, features = ["derive"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true }
 ciborium = { workspace = true, features = ["std"] }
-bincode = { workspace = true, features = ["serde"] }
+bincode = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 
-zstd = { workspace = true, features = ["encode", "decode"] }
+zstd = { workspace = true }
 crc32fast = { workspace = true }
 
 qrcodegen = { workspace = true }

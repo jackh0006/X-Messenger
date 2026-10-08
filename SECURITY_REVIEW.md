@@ -29,11 +29,14 @@ security audit and does not approve the protocol for real secrets.
    The unused declarations were removed and X25519 was pinned to the existing
    lockfile version. The full dependency graph remains unapproved until a
    reproducible clean build and dependency review succeed.
-6. An offline locked test resolution still fails because `keyring = 1.3` is
-   unavailable in the local registry cache. It is declared in the Linux app
-   but not referenced by its source. This is a build/reproducibility blocker,
-   not evidence that the test suite passes. The ignored per-package Cargo
-   profile warnings are also outstanding manifest hygiene issues.
+6. The Linux app declared unused `keyring = 1.3` and `secret-service`
+   dependencies. The former is unavailable in the registry and blocked a
+   clean build; both declarations were removed rather than replaced. The
+   ignored per-package Cargo profile warnings remain manifest hygiene issues.
+7. The Linux desktop stack cannot currently resolve: Relm4 0.7 selects
+   Libadwaita 0.5, while the app selects Libadwaita 0.6, which would link two
+   versions of the same native library. This requires a coordinated UI-stack
+   migration and compilation review before a Debian package can be produced.
 
 ## Required before release
 

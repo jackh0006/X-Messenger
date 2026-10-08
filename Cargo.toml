@@ -23,17 +23,15 @@ sha3 = "0.10"
 blake3 = "1.5"
 argon2 = "0.5"
 zeroize = { version = "1.7", features = ["derive"] }
-secret-service = "2.0"
-keyring = "1.3"
 
 serde = { version = "1.0", features = ["derive", "std"] }
 serde_json = "1.0"
 ciborium = { version = "0.2", features = ["std"] }
-bincode = { version = "1.3", features = ["serde"] }
+bincode = "1.3"
 base64 = "0.22"
 hex = "0.4"
 
-zstd = { version = "0.13", features = ["encode", "decode"] }
+zstd = "0.13"
 crc32fast = "1.3"
 
 qrcodegen = "1.8"
@@ -52,7 +50,7 @@ clap = { version = "4.5", features = ["derive", "env", "string"] }
 
 gtk4 = { version = "0.9", features = ["v4_10"] }
 libadwaita = { version = "0.6", features = ["v1_4"] }
-relm4 = { version = "0.7", features = ["gtk4", "libadwaita"] }
+relm4 = { version = "0.7", features = ["libadwaita"] }
 
 [profile.release]
 lto = true

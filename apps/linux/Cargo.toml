@@ -26,17 +26,15 @@ sha3 = { workspace = true }
 blake3 = { workspace = true }
 argon2 = { workspace = true }
 zeroize = { workspace = true, features = ["derive"] }
-secret-service = { workspace = true }
-keyring = { workspace = true }
 
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true }
 ciborium = { workspace = true, features = ["std"] }
-bincode = { workspace = true, features = ["serde"] }
+bincode = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 
-zstd = { workspace = true, features = ["encode", "decode"] }
+zstd = { workspace = true }
 crc32fast = { workspace = true }
 
 qrcodegen = { workspace = true }
@@ -55,7 +53,7 @@ clap = { workspace = true, features = ["derive", "env", "string"] }
 
 gtk4 = { workspace = true, features = ["v4_10"] }
 libadwaita = { workspace = true, features = ["v1_4"] }
-relm4 = { workspace = true, features = ["gtk4", "libadwaita"] }
+relm4 = { workspace = true, features = ["libadwaita"] }
 
 arrayref = "0.3"
 getrandom = { version = "0.2", features = ["std"] }
