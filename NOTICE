@@ -1,0 +1,17 @@
+X Messenger — copyright and licence notice
+
+Copyright (c) 2026 jackh0006 and contributors.
+Project: https://github.com/jackh0006/X-Messenger
+Licence: MIT License, see LICENSE.
+
+This project is fully open source. You may use, copy, modify, merge,
+publish, distribute, sublicense, and sell copies under the MIT terms.
+You must keep the copyright and licence notices in all copies.
+
+Contributions are licensed under the same MIT terms. By contributing you
+confirm you wrote the change or have the right to submit it, and you agree
+your contribution is MIT licensed (Developer Certificate of Origin).
+
+Third-party code keeps its own licence. See THIRD_PARTY_LICENSES when
+present, plus Cargo.lock, pubspec.lock, and SBOM artifacts for the exact list.
+No contributor grants patent rights beyond what MIT implies. No warranty.

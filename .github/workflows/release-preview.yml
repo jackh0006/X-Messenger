@@ -1,15 +1,15 @@
-name: Verify
+name: preview-release
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  preview:
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@v4
       - name: Enforce offline source boundary
@@ -24,3 +24,14 @@ jobs:
           flutter pub get --offline || flutter pub get
           flutter analyze
           flutter test
+      - name: Build Linux preview bundle
+        run: |
+          cd app
+          flutter build linux --release
+          test -x build/linux/x64/release/bundle/x_messenger
+      - name: Upload preview bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-messenger-linux-preview
+          path: app/build/linux/x64/release/bundle
+          if-no-files-found: error

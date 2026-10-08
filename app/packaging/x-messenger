@@ -1,0 +1,2 @@
+#!/usr/bin/env sh
+exec /opt/x-messenger/x_messenger "$@"

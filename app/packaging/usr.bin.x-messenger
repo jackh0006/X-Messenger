@@ -1,0 +1,11 @@
+#include <tunables/global>
+
+/opt/x-messenger/x_messenger {
+  #include <abstractions/base>
+  /opt/x-messenger/** rix,
+  owner @{HOME}/.local/share/x_messenger/** rwk,
+  deny network inet,
+  deny network inet6,
+  deny network packet,
+  deny network bluetooth,
+}

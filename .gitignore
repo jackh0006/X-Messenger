@@ -12,3 +12,8 @@ target/
 **/__pycache__/
 *.py[cod]
 .idea/
+app/build/
+app/dist/
+app/.dart_tool/
+*.deb
+*.deb.sha256

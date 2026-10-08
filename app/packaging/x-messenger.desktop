@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=X Messenger
+Comment=Offline X Messenger shared-interface preview
+Exec=x-messenger
+Terminal=false
+Categories=Utility;Security;
+StartupNotify=true
