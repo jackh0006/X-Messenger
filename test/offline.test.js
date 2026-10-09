@@ -125,3 +125,13 @@ test('native NFC/BLE plugins stay offline and registered', () => {
   assert.ok(ble.includes('onStartSuccess') && ble.includes('onStartFailure'), 'advertise result must be truthful');
   assert.ok(!manifest.includes('BLUETOOTH_SCAN'), 'unused SCAN permission must stay out (least privilege)');
 });
+
+test('radio buttons always render with honest disabled reasons', () => {
+  const js = read('app.js');
+  for (const id of ['nfcSend', 'bleSend', 'nfcReceive', 'bleReceive', 'bleAdvertise', 'bleSelfTest', 'radioStatus']) {
+    assert.ok(js.includes(id), `${id} must exist in UI`);
+  }
+  assert.ok(!/if\s*\(\s*nfcAvailable\(\)\)\s*\{/.test(js), 'NFC buttons must not hide silently');
+  assert.ok(!/if\s*\(\s*bleAvailable\(\)\)\s*\{/.test(js), 'BLE buttons must not hide silently');
+  assert.ok(js.includes('Self-test PASS'), 'framing self-test must report honestly');
+});

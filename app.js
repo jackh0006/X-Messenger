@@ -149,37 +149,38 @@ $('#openReceive').onclick = () => openModal('#receiveDialog');
 $('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
 $('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
-// NFC / Bluetooth send buttons (1.0.8). Added only when the platform can do it.
+// NFC / Bluetooth send buttons (1.0.8). ALWAYS rendered — never a mystery.
+// When the platform cannot do it, the button stays visible but disabled
+// with the exact reason. No silent hiding, ever.
 try {
   const row = document.querySelector('#transferDialog .export-row');
   if (row) {
-    const mk = (id, label, title) => { const b = document.createElement('button'); b.id = id; b.textContent = label; b.title = title; row.append(b); return b; };
-    if (nfcAvailable()) {
-      const b = mk('nfcSend', 'Send via NFC', 'Tap phones / write tag. Small envelopes only.');
-      b.onclick = async () => {
-        b.disabled = true;
-        try { await nfcWrite(currentPayload); currentVia = 'nfc'; $('#payloadSize').textContent += ' — sent via NFC (phrase still required separately)'; }
-        catch (e) { $('#payloadSize').textContent = `NFC failed: ${(e && e.message) || e}. Use QR or file.`; }
-        finally { b.disabled = false; }
-      };
-    }
-    if (bleAvailable()) {
-      const b = mk('bleSend', 'Send via Bluetooth', 'Encrypted BLE transfer to a nearby X Messenger.');
-      b.onclick = async () => {
-        b.disabled = true;
-        try {
-          let queued = false;
-          await bleSend(currentPayload, (i, n) => {
-            if (i === 0) { queued = true; $('#payloadSize').textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
-            else $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`;
-          });
-          currentVia = 'ble';
-          $('#payloadSize').textContent += queued ? ' (delivers when a peer connects; phrase still required separately)' : ' — sent via Bluetooth (phrase still required separately)';
-        }
-        catch (e) { $('#payloadSize').textContent = `Bluetooth failed: ${(e && e.message) || e}. Use QR or file.`; }
-        finally { b.disabled = false; }
-      };
-    }
+    const mk = (id, label, ok, reason) => { const b = document.createElement('button'); b.id = id; b.textContent = label; b.disabled = !ok; if (!ok) b.title = reason; row.append(b); return b; };
+    const nfcOk = nfcAvailable();
+    const nfcB = mk('nfcSend', 'Send via NFC', nfcOk, nfcOk ? 'Tap phones / write tag. Small envelopes only.' : 'NFC needs the Android app (native radio).');
+    nfcB.onclick = async () => {
+      nfcB.disabled = true;
+      try { await nfcWrite(currentPayload); currentVia = 'nfc'; $('#payloadSize').textContent += ' — sent via NFC (phrase still required separately)'; }
+      catch (e) { $('#payloadSize').textContent = `NFC failed: ${(e && e.message) || e}. Use QR or file.`; }
+      finally { nfcB.disabled = !nfcAvailable(); }
+    };
+    const bleOk = bleAvailable();
+    const bleB = mk('bleSend', 'Send via Bluetooth', bleOk, bleOk ? 'Encrypted BLE transfer to a nearby X Messenger.' : 'Bluetooth needs Chrome with Bluetooth, or the Android app.');
+    bleB.onclick = async () => {
+      if (!bleAvailable()) { $('#payloadSize').textContent = 'Bluetooth is not available here. Use QR or file.'; return; }
+      bleB.disabled = true;
+      try {
+        let queued = false;
+        await bleSend(currentPayload, (i, n) => {
+          if (i === 0) { queued = true; $('#payloadSize').textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
+          else $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`;
+        });
+        currentVia = 'ble';
+        $('#payloadSize').textContent += queued ? ' (delivers when a peer connects; phrase still required separately)' : ' — sent via Bluetooth (phrase still required separately)';
+      }
+      catch (e) { $('#payloadSize').textContent = `Bluetooth failed: ${(e && e.message) || e}. Use QR or file.`; }
+      finally { bleB.disabled = !bleAvailable(); }
+    };
     const note = document.createElement('p'); note.className = 'subtle';
     note.textContent = 'Radio is hostile: anyone nearby can record it. XM1 encryption is the only protection — never send the phrase over NFC/Bluetooth/QR.';
     row.after(note);
@@ -189,7 +190,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); do
 $('#showSecurity').onclick = () => openModal('#securityDialog'); $('#learnMore').onclick = () => openModal('#whyDialog'); $('#showAbout').onclick = () => openModal('#aboutDialog'); $('#showDonate').onclick = () => openModal('#donateDialog'); $('#openDonate').onclick = () => { closeAll(); openModal('#donateDialog'); };
 // Keep the in-app summary focused on properties the application can verify.
 // The full threat model remains in SECURITY.md for publication and review.
-$('#securityDialog').querySelector('.modal-content').innerHTML = '<div class="modal-kicker">SECURITY PROPERTIES</div><h2>Built for private offline transfer</h2><div class="guide-grid"><div><b>✈</b><p><strong>Works in airplane mode</strong><small>Android has no Internet permission. Linux accepts the GUI only on this device’s loopback address.</small></p></div><div><b>✓</b><p><strong>Authenticated encryption</strong><small>AES-256-GCM detects changed ciphertext when the correct phrase is used.</small></p></div><div><b>✓</b><p><strong>Phrase stays separate</strong><small>The shared phrase is never included in the QR code or encrypted payload.</small></p></div><div><b>✓</b><p><strong>Local recipient labels</strong><small>Names and notes stay on this device; no account or remote contact service is created.</small></p></div></div><p class="subtle">v1.0.7 · Unlike online messengers: no signal, no account, no server. Needs independent audit before high-risk use.</p>';
+$('#securityDialog').querySelector('.modal-content').innerHTML = '<div class="modal-kicker">SECURITY PROPERTIES</div><h2>Built for private offline transfer</h2><div class="guide-grid"><div><b>✈</b><p><strong>Works in airplane mode</strong><small>Android has no Internet permission. Linux accepts the GUI only on this device’s loopback address.</small></p></div><div><b>✓</b><p><strong>Authenticated encryption</strong><small>AES-256-GCM detects changed ciphertext when the correct phrase is used.</small></p></div><div><b>✓</b><p><strong>Phrase stays separate</strong><small>The shared phrase is never included in the QR code or encrypted payload.</small></p></div><div><b>✓</b><p><strong>Local recipient labels</strong><small>Names and notes stay on this device; no account or remote contact service is created.</small></p></div></div><p class="subtle">v1.0.8 · Unlike online messengers: no signal, no account, no server. Needs independent audit before high-risk use.</p>';
 document.querySelector('.security-score strong').textContent = 'Works in airplane mode';
 document.querySelector('.security-score p').textContent = 'No account, no number, no server';
 // First-run “why different” story. Local only, shows once per device.
@@ -203,43 +204,65 @@ async function scanLoop() { const video = $('#scanner'), canvas = document.creat
 async function startScanner() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
 function stopScanner() { scanning = false; cancelAnimationFrame(scanTimer); const stream = $('#scanner').srcObject; if (stream) stream.getTracks().forEach(t => t.stop()); $('#scanner').srcObject = null; }
 $('#startCamera').onclick = startScanner;
-// NFC / Bluetooth receive buttons (1.0.8).
+// NFC / Bluetooth receive buttons (1.0.8). ALWAYS rendered with honest state.
 try {
   const box = document.querySelector('#receiveDialog .scan-box');
   if (box) {
-    if (nfcAvailable()) {
-      const b = document.createElement('button'); b.id = 'nfcReceive'; b.textContent = 'Tap NFC tag';
-      b.onclick = () => { $('#receiveStatus').textContent = 'Hold phones together…'; nfcReadOnce(t => { $('#payloadInput').value = t; currentVia = 'nfc'; $('#receiveStatus').textContent = 'NFC envelope received. Enter the phrase to decrypt.'; }); };
-      box.append(b);
-    }
-    if (bleAvailable()) {
-      const b = document.createElement('button'); b.id = 'bleReceive'; b.textContent = 'Listen via Bluetooth';
-      let stop = null;
-      b.onclick = () => {
-        if (stop) { stop(); stop = null; b.textContent = 'Listen via Bluetooth'; return; }
-        b.textContent = 'Stop listening'; $('#receiveStatus').textContent = 'Waiting for a nearby X Messenger… (90s)';
-        stop = bleListen(t => { $('#payloadInput').value = t; currentVia = 'ble'; $('#receiveStatus').textContent = 'Bluetooth transfer complete. Enter the phrase to decrypt.'; stop = null; b.textContent = 'Listen via Bluetooth'; }, n => { $('#receiveStatus').textContent = `Bluetooth: ${n} frames…`; });
-      };
-      box.append(b);
-    }
+    const radio = document.createElement('p'); radio.className = 'subtle'; radio.id = 'radioStatus';
+    const nfcState = nfcAvailable() ? 'ready here' : 'needs Android app';
+    const bleState = blePlugin() ? 'native bridge present' : ('bluetooth' in navigator ? 'ready here' : 'not in this browser — Android app or Chrome needed');
+    radio.textContent = `NFC: ${nfcState} · Bluetooth: ${bleState}`;
+    box.append(radio);
+    const nfcB = document.createElement('button'); nfcB.id = 'nfcReceive'; nfcB.textContent = 'Tap NFC tag';
+    if (!nfcAvailable()) { nfcB.disabled = true; nfcB.title = 'NFC needs the Android app (native radio).'; }
+    nfcB.onclick = () => {
+      if (!nfcAvailable()) { $('#receiveStatus').textContent = 'NFC is not available here. Use camera or paste.'; return; }
+      $('#receiveStatus').textContent = 'Hold phones together…';
+      nfcReadOnce(t => { $('#payloadInput').value = t; currentVia = 'nfc'; $('#receiveStatus').textContent = 'NFC envelope received. Enter the phrase to decrypt.'; });
+    };
+    box.append(nfcB);
+    const bleB = document.createElement('button'); bleB.id = 'bleReceive'; bleB.textContent = 'Listen via Bluetooth';
+    if (!bleAvailable()) { bleB.disabled = true; bleB.title = 'Bluetooth needs Chrome with Bluetooth, or the Android app.'; }
+    let stop = null;
+    bleB.onclick = () => {
+      if (!bleAvailable()) { $('#receiveStatus').textContent = 'Bluetooth is not available here. Use QR or paste.'; return; }
+      if (stop) { stop(); stop = null; bleB.textContent = 'Listen via Bluetooth'; return; }
+      bleB.textContent = 'Stop listening'; $('#receiveStatus').textContent = 'Waiting for a nearby X Messenger… (90s)';
+      stop = bleListen(t => { $('#payloadInput').value = t; currentVia = 'ble'; $('#receiveStatus').textContent = 'Bluetooth transfer complete. Enter the phrase to decrypt.'; stop = null; bleB.textContent = 'Listen via Bluetooth'; }, n => { $('#receiveStatus').textContent = `Bluetooth: ${n} frames…`; });
+    };
+    box.append(bleB);
     // Phone-as-peripheral switch (Android app only, manual — radio never
     // starts silently). Lets a Linux desktop discover this phone.
-    if (blePlugin()) {
-      const b = document.createElement('button'); b.id = 'bleAdvertise'; b.textContent = 'Advertise via Bluetooth';
-      let on = false;
-      b.onclick = async () => {
-        try {
-          if (on) { await blePlugin().stopAdvertising(); on = false; b.textContent = 'Advertise via Bluetooth'; $('#receiveStatus').textContent = 'Bluetooth advertising stopped.'; }
-          else { await blePlugin().startAdvertising(); on = true; b.textContent = 'Stop advertising'; $('#receiveStatus').textContent = 'Advertising X Messenger — visible to nearby Bluetooth. Turn off when done.'; }
-        } catch (e) { $('#receiveStatus').textContent = `Bluetooth advertising failed: ${(e && e.message) || e}`; }
-      };
-      box.append(b);
-    }
-    if (!nfcAvailable() && !bleAvailable()) {
-      const p = document.createElement('p'); p.className = 'subtle';
-      p.textContent = 'NFC/Bluetooth need the Android app (native radio). This browser has neither — use camera or paste.';
-      box.append(p);
-    }
+    const advB = document.createElement('button'); advB.id = 'bleAdvertise'; advB.textContent = 'Advertise via Bluetooth';
+    if (!blePlugin()) { advB.disabled = true; advB.title = 'Advertising needs the Android app (native radio).'; }
+    let on = false;
+    advB.onclick = async () => {
+      if (!blePlugin()) { $('#receiveStatus').textContent = 'Advertising needs the Android app.'; return; }
+      try {
+        if (on) { await blePlugin().stopAdvertising(); on = false; advB.textContent = 'Advertise via Bluetooth'; $('#receiveStatus').textContent = 'Bluetooth advertising stopped.'; }
+        else { await blePlugin().startAdvertising(); on = true; advB.textContent = 'Stop advertising'; $('#receiveStatus').textContent = 'Advertising X Messenger — visible to nearby Bluetooth. Turn off when done.'; }
+      } catch (e) { $('#receiveStatus').textContent = `Bluetooth advertising failed: ${(e && e.message) || e}`; }
+    };
+    box.append(advB);
+    // Hardware-free self-test: proves the whole encrypted BLE path
+    // (seal → frames → shuffle → reassemble → decrypt) with no radio.
+    const stB = document.createElement('button'); stB.id = 'bleSelfTest'; stB.textContent = 'Test Bluetooth framing';
+    stB.onclick = async () => {
+      stB.disabled = true;
+      try {
+        const sealed = await encryptText('bluetooth self-test — no radio involved', 'self test phrase words here');
+        const frames = bleEncode(sealed);
+        const mangled = [...frames].reverse();
+        mangled.push(frames[0]);
+        const back = bleDecode(mangled);
+        const text = await decryptText(back, 'self test phrase words here');
+        $('#receiveStatus').textContent = text === 'bluetooth self-test — no radio involved'
+          ? `Self-test PASS: ${frames.length} frames, envelope intact, decrypt OK.`
+          : 'Self-test FAIL: decrypt mismatch.';
+      } catch (e) { $('#receiveStatus').textContent = `Self-test FAIL: ${(e && e.message) || e}`; }
+      finally { stB.disabled = false; }
+    };
+    box.append(stB);
   }
 } catch {}
 const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join(' '); $('#fingerprint').textContent = id.toUpperCase(); $('#deviceId').textContent = `ID ${id.slice(0, 9).toUpperCase()}`; $('#copyFingerprint').onclick = async () => { try { await navigator.clipboard.writeText(id.toUpperCase()); clearClipboardLater(); } catch {} };

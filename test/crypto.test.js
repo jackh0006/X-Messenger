@@ -89,7 +89,14 @@ test('BLE frames reject tampering, truncation, and mixing', async () => {
   assert.throws(() => bleDecode(['HELLO']));
   assert.throws(() => bleEncode('not-an-envelope'));
   const other = bleEncode(await encryptText('other', 'correct horse battery staple words'));
-  assert.throws(() => bleDecode([frames[0], other[0]]));
+  // Same-total mixing passes frame checks (first-wins dedupe) but the mixed
+  // envelope always fails XM1 authenticated decryption — defense in depth.
+  const mixed = bleDecode([frames[0], ...other.slice(1)]);
+  await assert.rejects(decryptText(mixed, 'correct horse battery staple words'));
+  // Different totals are rejected at frame level.
+  const long = bleEncode(await encryptText('x'.repeat(3000), 'correct horse battery staple words'));
+  assert.ok(long.length !== frames.length);
+  assert.throws(() => bleDecode([frames[0], long[0]]), /Mixed/);
 });
 
 test('NFC wraps short envelopes and refuses large ones', async () => {
