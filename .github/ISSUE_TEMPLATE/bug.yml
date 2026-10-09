@@ -3,7 +3,7 @@ description: Something looks wrong (no secrets please!)
 body:
   - type: input
     id: version
-    attributes: {label: App version, placeholder: "1.0.2"}
+    attributes: {label: App version, placeholder: "see Releases page / cipherlink version"}
     validations: {required: true}
   - type: dropdown
     id: where

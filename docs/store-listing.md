@@ -1,4 +1,4 @@
-# Play Store listing — X Messenger v1.0.0 (copy/paste ready)
+# Play Store listing — X Messenger (copy/paste ready)
 
 ## Short description (≤80 chars)
 Offline encrypted QR courier — no account, no server
@@ -39,5 +39,5 @@ Support: jackh109867@gmail.com
 
 ## Graphics checklist
 - 512x512 icon, 1024x500 feature, 4–8 phone screenshots (EN): 1) welcome “No signal…” 2) seal QR 3) receive scan 4) settings + local users.
-- Target SDK 37, versionCode 1, versionName 1.0.0, package com.jackh0006.xmessenger.
+- Target SDK 37, current versionCode/versionName (see Releases page), package com.jackh0006.xmessenger.
 - Upload signed .aab only (debug APK never to Play).

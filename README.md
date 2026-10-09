@@ -1,7 +1,8 @@
-# X Messenger v1.0.7 — No signal? No account? Send it anyway.
+# X Messenger — No signal? No account? Send it anyway.
 
 [![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
-![Version](https://img.shields.io/badge/version-1.0.7-blue)
+[![Strict](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-boundary.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
+![Version](https://img.shields.io/github/v/release/jackh0006/X-Messenger?label=stable)
 ![Android](https://img.shields.io/badge/Android-targetSdk%2037-green)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 ![Offline](https://img.shields.io/badge/offline-first-orange)
@@ -19,11 +20,11 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 - [Why it is different](#why-its-different-to-any-messenger)
 - [What people need it for](#what-people-need-it-for)
 - [30-second demo](#30-second-demo-like-teaching-a-5-year-old)
-- [Features (v1.0.7, all platforms same)](#features-v102-all-platforms-same)
+- [Features (all platforms same)](#features-all-platforms-same)
 - [Use it](#use-it)
 - [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
 - [Android (stays offline)](#android-stays-offline)
-- [Security design](#security-design-v102)
+- [Security design](#security-design)
 - [Docs map](#docs-map)
 - [Donate](#donate-no-ads-no-premium)
 - [Versions](#versions)
@@ -33,16 +34,18 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 Same task, same method, reproducible (method + proof under the table).
 Legend: ✓ yes · ✗ no · ◐ partial.
 
-| Need (your words) | X v1.0.7 | WhatsApp | Telegram | SMS | How we prove it |
+| Need (your words) | X (stable) | WhatsApp | Telegram | SMS | How we prove it |
 | --- | :---: | :---: | :---: | :---: | --- |
 | ✈ Send with **zero bars** | ✓ | ✗ | ✗ | ◐ no lock | Airplane-mode QR seal → scan → decrypt, `npm test` |
 | ◌ **No SIM / number / email** | ✓ | ✗ | ✗ | ✗ | Signup screens need numbers; X has no account field |
 | ⬢ **No server copy to leak** | ✓ offline · ◐ your VPS | ✗ | ✗ | ✗ | `ss -tlnp` loopback + `aapt` (no `INTERNET`) |
 | ◈ Phrase **never in QR** | ✓ enforced | — | — | — | Tamper test rejects mixed payloads |
+| Padded transfers hide length | ✓ buckets | — | — | — | Duplicate/truncation tests |
+| No browser warning (after trust) | ✓ local CA | — | — | — | `gui --trust-ca` + fingerprint compare |
 | Normal-looking private page | ✓ LE + 443 | — | — | — | `openssl s_client` transcript |
 | Independent audit | ◐ open, needs audit | ✓ | ◐ | ✗ | [`SECURITY.md`](SECURITY.md) |
 
-Method: Ubuntu amd64 + Pixel/arm64, 2026-10-07, `npm ci && npm test` (16 pass),
+Method: Ubuntu amd64 + Pixel/arm64, `npm ci && npm test` green,
 `aapt dump permissions`, `ss -tlnp`, `openssl s_client -tls1_2`.
 Honest footnote: LAN/VPS observers still see domain/IP/port/sizes; message
 *words* stay `XM1` end-to-end. No “unhackable” claims — see Security below.
@@ -66,15 +69,15 @@ Honest footnote: LAN/VPS observers still see domain/IP/port/sizes; message
 
 ```bash
 npm ci
-npm test          # 16 checks: crypto, offline, dark mode, LAN honesty
+npm test          # crypto, offline, dark mode, LAN honesty
 npm run gui       # first run? run: npx x-messenger setup
 ```
 
-The Linux GUI opens on `https://127.0.0.1:8443` (this device only, zero
-egress). To change port/domain/mode: `x-messenger setup` or
-Settings → Connection.
+The Linux GUI opens on `https://127.0.0.1:443` (this device only, zero
+egress; if 443 is taken you are asked for another port). To change
+port/domain/mode: `x-messenger setup` or Settings → Connection.
 
-CLI (`cipherlink version` → `1.0.7`):
+CLI (`cipherlink version` → current stable):
 
 ```bash
 cipherlink encrypt "Meet at the north gate"
@@ -89,7 +92,7 @@ x-messenger gui --vps --domain msg.example.com --port 443
 The phrase is always asked **hidden** (never in shell history unless you
 force `--phrase` for scripts).
 
-## Features (v1.0.7, all platforms same)
+## Features (all platforms same)
 
 - Same `www/` bundle on Linux + Android (`cap sync` verified): themes
   (system/light/dark, fully fixed contrast), text size 14–20px that really
@@ -100,15 +103,16 @@ force `--phrase` for scripts).
   auto-clears in 30s, plaintext never saved, backups hold labels only.
 - Linux server: `GET/HEAD` allow-list, `TLS1.2+`, `no-store/nosniff/DENY/CSP`,
   `/api/info` (version, bind, TLS fingerprint/expiry/SAN), custom port
-  `1–65535` (best `8443`, VPS `443`), self-signed loopback/LAN certs +
-  Let’s Encrypt VPS certs, `0600/0700` files.
+  `1024–65535` (default `443`, prompt fallback), device-local CA-signed
+  loopback/LAN certs + Let’s Encrypt VPS certs, `0600/0700` files.
 - Android: `CAMERA` only, no `INTERNET`, `allowBackup=false`,
   `usesCleartextTraffic=false`, `minifyEnabled`.
 
 ## Linux GUI modes: device, LAN, VPS
 
-- **This device (default):** `x-messenger gui` → `https://127.0.0.1:8443`.
-  Zero internet. Safest. Airplane-mode proof in `PUBLISHING.md`.
+- **This device (default):** `x-messenger gui` → `https://127.0.0.1:443`.
+  Zero internet. Safest. If 443 is taken or needs privilege you are asked
+  for another port. Airplane-mode proof in `PUBLISHING.md`.
 - **LAN (opt-in):** `x-messenger gui --lan --port 8443` → encrypted TLS on
   your Wi-Fi, but routers/DPI **see** LAN IP/port/sizes. Compare the cert
   fingerprint in person (Settings → TLS certificate).
@@ -124,11 +128,11 @@ force `--phrase` for scripts).
 
 Settings, local users, fingerprint, QR scan — everything works with zero
 bars. Rebuild: `npm run android:sync && npm run android:apk` (debug only).
-Play upload is a signed `.aab` (`versionCode 8 / versionName 1.0.7`,
-`targetSdk 37`). Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
+Play upload is a signed `.aab` (current `versionCode`/`versionName`, see
+`android/app/build.gradle`, `targetSdk 37`). Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
 and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-policy.md](docs/privacy-policy.md).
 
-## Security design (v1.0.7)
+## Security design
 
 - `AES-256-GCM` via Web Crypto, `PBKDF2-HMAC-SHA256` 600,000 iterations,
   fresh 128-bit salt + 96-bit nonce per message, versioned `XM1` (v2 seals
@@ -179,8 +183,18 @@ or message contents).
 
 ## Versions
 
-`package.json 1.0.7` · `core.js 1.0.7` · Android `versionCode 8 / versionName 1.0.7`
-· Debian `1.0.7` · CLI `1.0.7` · GUI `v1.0.7`. Verify downloads with `SHA256SUMS`.
+Single source of truth: `package.json` (+ `core.js VERSION`,
+`android/app/build.gradle`, `packaging/debian/DEBIAN/control`,
+`server.js /api/info` — enforced by `test/crypto.test.js`).
+Check yours with `cipherlink version` and compare to the
+[stable release](https://github.com/jackh0006/X-Messenger/releases/latest).
+Each release ships:
+
+| File | What |
+| --- | --- |
+| `X-Messenger-<ver>-Linux-amd64.deb` | Ubuntu desktop app |
+| `X-Messenger-<ver>-Android-arm64.apk` | Android app (CAMERA-only) |
+| `X-Messenger-<ver>-SHA256SUMS.txt` | Hashes — verify before installing |
 
 ## Legal
 

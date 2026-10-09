@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: MIT
+name: Strict boundary
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  strict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # 1. Offline web bundle: no network APIs, no remote assets, no trackers.
+      - name: No network APIs in web bundle
+        run: |
+          for f in app.js core.js index.html service-worker.js; do
+            grep -qE 'XMLHttpRequest|WebSocket|sendBeacon' "$f" && { echo "$f contains a network API"; exit 1; };
+          done
+          grep -qE 'google-analytics|googletag|facebook\.net|doubleclick' app.js core.js && { echo "tracker found"; exit 1; }
+          grep -oE 'src="[^"]+"|href="[^"]+"' index.html | grep -qE '^ *(src|href)="https?://' && { echo "index.html loads remote URL"; exit 1; }
+          echo "web bundle: offline OK"
+      # 2. Android stays offline: CAMERA only.
+      - name: Android manifest stays offline
+        run: |
+          grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml && { echo "INTERNET permission forbidden"; exit 1; }
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' android/app/src/main/AndroidManifest.xml && { echo "network-state permission forbidden"; exit 1; }
+          echo "manifest: offline OK"
+      # 3. No cert-validation bypasses anywhere.
+      - name: No certificate bypasses
+        run: |
+          grep -rn 'ignore-certificate\|allow-insecure' bin/ server.js app.js scripts/ 2>/dev/null && { echo "cert bypass forbidden"; exit 1; }
+          echo "cert policy: strict OK"
+      # 4. No hype claims (AGENTS.md itself documents the banlist, so it is excluded).
+      - name: No unverifiable claims
+        run: |
+          grep -rin 'military-grade\|NSA-proof\|unhackable encryption\|CIA-grade messenger\|CIA-grade security\|invisible to DPI\|100% secure\|zero bugs\|bug-free' README.md SECURITY.md PRIVACY.md app.js bin/cipherlink server.js index.html CONTRIBUTING.md 2>/dev/null && { echo "hype claim forbidden"; exit 1; }
+          echo "claims: honest OK"
+      # 5. Version lockstep: single source of truth, no stale docs.
+      - name: Version lockstep
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          grep -q "VERSION = '$VER'" core.js
+          grep -q "versionName \"$VER\"" android/app/build.gradle
+          grep -q "Version: $VER" packaging/debian/DEBIAN/control
+          grep -q "version: '$VER'" server.js
+          grep -q "\"version\": \"$VER\"" package-lock.json
+          grep -rq '1\.0\.2' README.md SECURITY.md PRIVACY.md CONTRIBUTING.md PUBLISHING.md PLAY_RELEASE.md docs/ .github/ISSUE_TEMPLATE/ 2>/dev/null && { echo "stale 1.0.2 reference"; exit 1; }
+          echo "versions: lockstep OK ($VER)"
+      # 6. SPDX headers + THIRD-PARTY matches package.json.
+      - name: License headers and third-party notices
+        run: |
+          for f in core.js app.js server.js bin/cipherlink scripts/build-web.js scripts/build-deb.sh scripts/release.sh service-worker.js style.css index.html; do
+            head -3 "$f" | grep -q 'SPDX-License-Identifier' || { echo "$f missing SPDX"; exit 1; };
+          done
+          for p in $(node -p "Object.keys(require('./package.json').dependencies).join(' ')"); do
+            grep -q "$p" THIRD-PARTY-NOTICES.md || { echo "$p missing from THIRD-PARTY-NOTICES.md"; exit 1; };
+          done
+          echo "licenses: OK"

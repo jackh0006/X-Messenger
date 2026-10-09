@@ -1,4 +1,4 @@
-# X Messenger Privacy Policy — v1.0.0
+# X Messenger Privacy Policy
 
 Effective: 2026-10-06. App: X Messenger 1.0.7 (`com.jackh0006.xmessenger`).
 

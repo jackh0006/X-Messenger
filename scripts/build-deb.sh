@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 set -euo pipefail
 
 project_root="$(cd "$(dirname "$0")/.." && pwd)"

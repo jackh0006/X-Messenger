@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # X Messenger stable release script (v1.0.7+).
 # Usage: ./scripts/release.sh 1.0.7 [--publish]
 # Without --publish: verifies + builds .deb/.apk + SHA256SUMS locally.
@@ -26,11 +27,11 @@ echo "== 3/5 web bundle =="
 npm run build:web
 
 echo "== 4/5 packages =="
-OUT=/home/mhh06/Downloads/X-Messenger
 # Canonical asset names (stable since 1.0.7, all releases carry these):
 #   X-Messenger-<ver>-Linux-amd64.deb
 #   X-Messenger-<ver>-Android-arm64.apk
 #   X-Messenger-<ver>-SHA256SUMS.txt
+OUT=/home/mhh06/Downloads/X-Messenger
 DEB="$OUT/X-Messenger-$VER-Linux-amd64.deb"
 APK="$OUT/X-Messenger-$VER-Android-arm64.apk"
 SUMS="$OUT/X-Messenger-$VER-SHA256SUMS.txt"
@@ -45,6 +46,7 @@ cp android/app/build/outputs/apk/debug/app-debug.apk "$APK"
 aapt_out=$(/home/mhh06/Android/Sdk/build-tools/36.0.0/aapt dump badging "$APK")
 echo "$aapt_out" | grep -q "versionName='$VER'" || { echo "APK version mismatch"; exit 1; }
 echo "$aapt_out" | grep -q "uses-permission: name='android.permission.INTERNET'" && { echo "APK must not request INTERNET"; exit 1; }
+npm sbom --omit=dev --sbom-format=cyclonedx > "$OUT/X-Messenger-$VER-SBOM.cdx.json"
 echo "packages OK"
 
 if [[ "$MODE" != "--publish" ]]; then
@@ -65,7 +67,7 @@ Offline core: loopback-only HTTPS separate window. Optional gateway: LAN IP / VP
 Same hardened bundle on Android (CAMERA-only) and Linux.
 Needs independent audit before high-risk use. See SECURITY.md.
 EOF
-gh release upload "v$VER" "$OUT/X-Messenger-$VER-Linux-amd64.deb" "$OUT/X-Messenger-$VER-Android-arm64.apk" "$OUT/X-Messenger-$VER-SHA256SUMS.txt"
+gh release upload "v$VER" "$OUT/X-Messenger-$VER-Linux-amd64.deb" "$OUT/X-Messenger-$VER-Android-arm64.apk" "$OUT/X-Messenger-$VER-SHA256SUMS.txt" "$OUT/X-Messenger-$VER-SBOM.cdx.json"
 for old in $(gh release list --limit 50 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease==false) | .tagName'); do
   if [[ "$old" != "v$VER" ]]; then gh release edit "$old" --prerelease; fi
 done
