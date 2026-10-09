@@ -162,12 +162,13 @@
     return out.join('');
   }
   // NFC handoff envelope (1.0.8): short sealed payloads only. Padded v2
-  // envelopes start near 620B, so NFC needs NTAG216-class tags (888B).
-  // Anything bigger must travel by QR/file/BLE.
+  // envelopes start near 620 bytes, so NFC needs NTAG216-class tags (888B).
+  // Anything bigger must travel by QR/file/BLE. Sized in UTF-8 bytes.
   const NFC_MAX = 800;
   function nfcWrap(payload) {
     if (typeof payload !== 'string' || !payload.startsWith('XM1.')) throw new TypeError('NFC carries XM1 envelopes only.');
-    if (payload.length > NFC_MAX) throw new Error(`Too big for NFC (${payload.length}B > ${NFC_MAX}B). Use QR, file, or Bluetooth.`);
+    const bytes = encoder.encode(payload).length;
+    if (bytes > NFC_MAX) throw new Error(`Too big for NFC (${bytes}B > ${NFC_MAX}B). Use QR, file, or Bluetooth.`);
     return payload;
   }
   root.XMessengerCrypto = { encryptText, decryptText, bleEncode, bleDecode, nfcWrap, NFC_MAX, BLE_CHUNK, ITERATIONS, MAX_TEXT_CHARS, MAX_PAYLOAD_CHARS, VERSION };

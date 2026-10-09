@@ -57,7 +57,8 @@ public class NfcPlugin extends Plugin {
             call.reject("NFC carries sealed XM1 envelopes only.");
             return;
         }
-        if (payload.length() > 800) {
+        // Sized in UTF-8 bytes like the JS gate (payloads are ASCII base64url).
+        if (payload.getBytes(StandardCharsets.UTF_8).length > 800) {
             call.reject("Too big for NFC. Use QR, file, or Bluetooth.");
             return;
         }

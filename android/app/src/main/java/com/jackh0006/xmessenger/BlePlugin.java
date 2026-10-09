@@ -60,6 +60,13 @@ public class BlePlugin extends Plugin {
     private String completedPayload;
     private final List<String> txQueue = new ArrayList<>();
 
+    private PluginCall pendingAdvertise;
+    private final Runnable advertiseTimeout = () -> {
+        PluginCall call = pendingAdvertise;
+        pendingAdvertise = null;
+        if (call != null) call.reject("Bluetooth advertising timed out (radio busy or unsupported).");
+    };
+
     @PluginMethod
     public void startAdvertising(PluginCall call) {
         try {
@@ -67,11 +74,11 @@ public class BlePlugin extends Plugin {
                 call.reject("Bluetooth unavailable, switched off, or advertising unsupported.");
                 return;
             }
-            JSObject out = new JSObject();
-            out.put("service", SVC.toString());
-            call.resolve(out);
+            // Resolve truthfully in the callback — never report unstarted radio.
+            pendingAdvertise = call;
+            handler.postDelayed(advertiseTimeout, 5000);
         } catch (SecurityException e) {
-            call.reject("Bluetooth permission denied — enable Nearby devices permission in system settings.");
+            call.reject("Bluetooth permission denied — grant Nearby devices + Location-free Bluetooth in system settings, then retry.");
         } catch (Exception e) {
             call.reject("Could not start Bluetooth advertising.");
         }
@@ -80,6 +87,8 @@ public class BlePlugin extends Plugin {
     @PluginMethod
     public void stopAdvertising(PluginCall call) {
         try {
+            pendingAdvertise = null;
+            handler.removeCallbacks(advertiseTimeout);
             if (advertiser != null) {
                 try {
                     advertiser.stopAdvertising(advertiseCallback);
@@ -109,12 +118,19 @@ public class BlePlugin extends Plugin {
                 call.reject("No frames to send.");
                 return;
             }
+            boolean connected;
             synchronized (txQueue) {
                 txQueue.clear();
                 for (int i = 0; i < arr.length(); i++) txQueue.add(arr.getString(i));
+                connected = subscriber != null;
             }
             flushTx();
-            call.resolve();
+            // Honest result: frames are queued, but they only reach a peer
+            // when a central is subscribed. Never report phantom delivery.
+            JSObject out = new JSObject();
+            out.put("connected", connected);
+            out.put("queued", arr.length());
+            call.resolve(out);
         } catch (Exception e) {
             call.reject("Could not queue Bluetooth frames.");
         }
@@ -185,7 +201,43 @@ public class BlePlugin extends Plugin {
     }
 
     private final AdvertiseCallback advertiseCallback = new AdvertiseCallback() {
+        @Override
+        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+            PluginCall call = pendingAdvertise;
+            pendingAdvertise = null;
+            handler.removeCallbacks(advertiseTimeout);
+            if (call != null) {
+                JSObject out = new JSObject();
+                out.put("service", SVC.toString());
+                call.resolve(out);
+            }
+        }
+
+        @Override
+        public void onStartFailure(int errorCode) {
+            PluginCall call = pendingAdvertise;
+            pendingAdvertise = null;
+            handler.removeCallbacks(advertiseTimeout);
+            if (advertiser != null) {
+                try {
+                    advertiser.stopAdvertising(this);
+                } catch (Exception ignored) {
+                }
+            }
+            if (call != null) call.reject("Bluetooth advertising failed (" + advertiseReason(errorCode) + ").");
+        }
     };
+
+    private static String advertiseReason(int code) {
+        switch (code) {
+            case AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED: return "already started";
+            case AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE: return "data too large";
+            case AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED: return "unsupported on this device";
+            case AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR: return "internal error";
+            case AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS: return "too many advertisers";
+            default: return "code " + code;
+        }
+    }
 
     private final BluetoothGattServerCallback gattCallback = new BluetoothGattServerCallback() {
         @Override

@@ -23,10 +23,13 @@ prove nothing, and the shared phrase still travels separately, in person.
 
 ## Bluetooth LE (Android peripheral + desktop central)
 
-- **What works:** the Android app advertises an `X Messenger` GATT service;
-  the Linux desktop page (Chrome `--app` window) connects, and chunked
-  `XMB` frames carry the envelope with per-frame CRC, order-independence,
-  resume, and duplicate tolerance. The receiver still enters the phrase.
+- **What works:** the Android app advertises an `X Messenger` GATT service
+  only when you tap **Advertise via Bluetooth** (manual — radio never
+  starts silently; tap again to stop); the Linux desktop page (Chrome
+  `--app` window) connects, and chunked `XMB` frames carry the envelope
+  with per-frame CRC, order-independence, resume, and duplicate tolerance.
+  The receiver still enters the phrase. Sends report honestly: queued
+  frames deliver only once a central subscribes.
 - **Limits:** short range (~10 m), slow (hundreds of bytes per second),
   one peer at a time, 90-second listen window, explicit tap per transfer.
   Phone-to-phone needs a future central on the second phone (roadmap).

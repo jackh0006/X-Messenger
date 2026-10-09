@@ -110,9 +110,18 @@ test('native NFC/BLE plugins stay offline and registered', () => {
   const main = read('android/app/src/main/java/com/jackh0006/xmessenger/MainActivity.java');
   const nfc = read('android/app/src/main/java/com/jackh0006/xmessenger/NfcPlugin.java');
   const ble = read('android/app/src/main/java/com/jackh0006/xmessenger/BlePlugin.java');
+  const js = read('app.js');
+  const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.ok(main.includes('registerPlugin(NfcPlugin.class)') && main.includes('registerPlugin(BlePlugin.class)'), 'plugins must be registered');
   assert.ok(!/INTERNET|HttpURLConnection|OkHttp|Socket/.test(nfc + ble), 'native radio code must not open sockets');
   assert.ok(nfc.includes('XM1.') && nfc.includes('800'), 'NFC plugin must gate sealed size');
   assert.ok(ble.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6c'), 'BLE service UUID must match web central');
-  assert.ok(read('app.js').includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6c'), 'web UUID must match native peripheral');
+  assert.ok(ble.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6d') && ble.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6e'), 'BLE TX/RX UUIDs must exist natively');
+  assert.ok(js.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6d') && js.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6e'), 'web TX/RX UUIDs must match native peripheral');
+  // JS↔native method parity: every native-bridge call must exist natively.
+  assert.ok(js.includes('queueOutgoing') && !js.includes('sendFrames'), 'web BLE send must call queueOutgoing');
+  assert.ok(ble.includes('public void queueOutgoing'), 'native queueOutgoing must exist');
+  assert.ok(js.includes('startAdvertising') && js.includes('bleAdvertise'), 'advertising must be user-toggled in UI');
+  assert.ok(ble.includes('onStartSuccess') && ble.includes('onStartFailure'), 'advertise result must be truthful');
+  assert.ok(!manifest.includes('BLUETOOTH_SCAN'), 'unused SCAN permission must stay out (least privilege)');
 });

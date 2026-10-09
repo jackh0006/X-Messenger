@@ -167,7 +167,15 @@ try {
       const b = mk('bleSend', 'Send via Bluetooth', 'Encrypted BLE transfer to a nearby X Messenger.');
       b.onclick = async () => {
         b.disabled = true;
-        try { await bleSend(currentPayload, (i, n) => { $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`; }); currentVia = 'ble'; $('#payloadSize').textContent += ' — sent via Bluetooth (phrase still required separately)'; }
+        try {
+          let queued = false;
+          await bleSend(currentPayload, (i, n) => {
+            if (i === 0) { queued = true; $('#payloadSize').textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
+            else $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`;
+          });
+          currentVia = 'ble';
+          $('#payloadSize').textContent += queued ? ' (delivers when a peer connects; phrase still required separately)' : ' — sent via Bluetooth (phrase still required separately)';
+        }
         catch (e) { $('#payloadSize').textContent = `Bluetooth failed: ${(e && e.message) || e}. Use QR or file.`; }
         finally { b.disabled = false; }
       };
@@ -211,6 +219,19 @@ try {
         if (stop) { stop(); stop = null; b.textContent = 'Listen via Bluetooth'; return; }
         b.textContent = 'Stop listening'; $('#receiveStatus').textContent = 'Waiting for a nearby X Messenger… (90s)';
         stop = bleListen(t => { $('#payloadInput').value = t; currentVia = 'ble'; $('#receiveStatus').textContent = 'Bluetooth transfer complete. Enter the phrase to decrypt.'; stop = null; b.textContent = 'Listen via Bluetooth'; }, n => { $('#receiveStatus').textContent = `Bluetooth: ${n} frames…`; });
+      };
+      box.append(b);
+    }
+    // Phone-as-peripheral switch (Android app only, manual — radio never
+    // starts silently). Lets a Linux desktop discover this phone.
+    if (blePlugin()) {
+      const b = document.createElement('button'); b.id = 'bleAdvertise'; b.textContent = 'Advertise via Bluetooth';
+      let on = false;
+      b.onclick = async () => {
+        try {
+          if (on) { await blePlugin().stopAdvertising(); on = false; b.textContent = 'Advertise via Bluetooth'; $('#receiveStatus').textContent = 'Bluetooth advertising stopped.'; }
+          else { await blePlugin().startAdvertising(); on = true; b.textContent = 'Stop advertising'; $('#receiveStatus').textContent = 'Advertising X Messenger — visible to nearby Bluetooth. Turn off when done.'; }
+        } catch (e) { $('#receiveStatus').textContent = `Bluetooth advertising failed: ${(e && e.message) || e}`; }
       };
       box.append(b);
     }
@@ -324,7 +345,13 @@ async function bleConnect() {
 async function bleSend(payload, onProgress) {
   const frames = bleEncode(payload);
   const p = blePlugin();
-  if (p) { await p.sendFrames({ frames }); return; }
+  if (p) {
+    // Native peripheral: queue frames; they flush when a central subscribes.
+    const r = await p.queueOutgoing({ frames });
+    if (r && r.connected === false) onProgress(0, frames.length);
+    else onProgress(frames.length, frames.length);
+    return;
+  }
   const { device, svc } = await bleConnect();
   try {
     const rx = await svc.getCharacteristic(XMSG_RX);
@@ -339,16 +366,21 @@ function bleListen(onPayload, onProgress) {
   const p = blePlugin();
   if (p) {
     let alive = true;
+    const deadline = setTimeout(() => {
+      if (!alive) return;
+      alive = false;
+      $('#receiveStatus').textContent = 'Bluetooth listen timed out (90s). Tap Listen to retry.';
+    }, 90000);
     const poll = async () => {
       if (!alive) return;
       try {
         const r = await p.pollIncoming();
-        if (r && r.payload) { onPayload(r.payload); return; }
+        if (r && r.payload) { alive = false; clearTimeout(deadline); onPayload(r.payload); return; }
       } catch {}
       setTimeout(poll, 1200);
     };
     poll();
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(deadline); };
   }
   let stopped = false, got = [];
   navigator.bluetooth.requestDevice({ filters: [{ services: [XMSG_SVC] }], optionalServices: [XMSG_SVC] })
