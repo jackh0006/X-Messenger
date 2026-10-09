@@ -2,8 +2,8 @@
 name = "x-messenger-protocol"
 version = "2.0.0"
 edition = "2021"
-description = "CIA-Grade Offline Messenger Protocol"
-license = "MIT OR Apache-2.0"
+description = "X Messenger protocol draft (QUARANTINED: unreviewed - see docs/MASTER_SPEC_100.md)"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/jackh0006/X-Messenger"
 categories = ["network-programming", "cryptography"]
 keywords = ["protocol", "messaging", "offline", "qr-code", "double-ratchet"]

@@ -24,3 +24,7 @@ jobs:
           flutter pub get --offline || flutter pub get
           flutter analyze
           flutter test
+      - name: Test Rust vault and transport crates
+        run: |
+          cargo test --manifest-path core/vault/Cargo.toml --locked --offline || cargo test --manifest-path core/vault/Cargo.toml --locked
+          cargo test --manifest-path core/transport/Cargo.toml --locked --offline || cargo test --manifest-path core/transport/Cargo.toml --locked
