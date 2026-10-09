@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { webcrypto } = require('node:crypto');
 global.crypto = webcrypto;
-const { encryptText, decryptText, ITERATIONS, VERSION, MAX_TEXT_CHARS } = require('../core.js');
+const { encryptText, decryptText, bleEncode, bleDecode, nfcWrap, NFC_MAX, ITERATIONS, VERSION, MAX_TEXT_CHARS } = require('../core.js');
 
 test('encrypts an X Messenger payload and restores the original text', async () => {
   const sealed = await encryptText('meet at the north gate at 09:00', 'glass comet cedar forest');
@@ -16,15 +16,15 @@ test('rejects a wrong phrase and uses the configured work factor', async () => {
   assert.equal(ITERATIONS, 600000);
 });
 
-test('keeps version fixed at 1.0.7 everywhere', () => {
-  assert.equal(VERSION, '1.0.7');
-  assert.equal(require('../package.json').version, '1.0.7');
+test('keeps version fixed at 1.0.8 everywhere', () => {
+  assert.equal(VERSION, '1.0.8');
+  assert.equal(require('../package.json').version, '1.0.8');
   const fs = require('node:fs');
   const gradle = fs.readFileSync(require('node:path').join(__dirname, '..', 'android', 'app', 'build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionName "1.0.7"'), 'android versionName must be 1.0.7');
-  assert.ok(gradle.includes('versionCode 8'), 'android versionCode must be 8');
+  assert.ok(gradle.includes('versionName "1.0.8"'), 'android versionName must be 1.0.8');
+  assert.ok(gradle.includes('versionCode 9'), 'android versionCode must be 9');
   const control = fs.readFileSync(require('node:path').join(__dirname, '..', 'packaging', 'debian', 'DEBIAN', 'control'), 'utf8');
-  assert.ok(control.includes('Version: 1.0.7'), 'deb control must be 1.0.7');
+  assert.ok(control.includes('Version: 1.0.8'), 'deb control must be 1.0.8');
 });
 
 test('round-trips unicode, emoji and punctuation', async () => {
@@ -68,4 +68,35 @@ test('duplicate delivery decrypts identically and truncation is rejected', async
   assert.equal(await decryptText(sealed, 'duplicate delivery phrase words'), 'replayable delivery');
   await assert.rejects(decryptText(sealed.slice(0, Math.floor(sealed.length / 2)), 'duplicate delivery phrase words'));
   await assert.rejects(decryptText(sealed + 'A', 'duplicate delivery phrase words'));
+});
+
+test('BLE frames round-trip out of order with duplicates', async () => {
+  const sealed = await encryptText('radio test message for bluetooth transfer', 'correct horse battery staple words');
+  const frames = bleEncode(sealed);
+  assert.ok(frames.length >= 1 && frames.every(f => f.startsWith('XMB.')));
+  const shuffled = [...frames].reverse();
+  shuffled.push(frames[0]);
+  assert.equal(bleDecode(shuffled), sealed);
+});
+
+test('BLE frames reject tampering, truncation, and mixing', async () => {
+  const sealed = await encryptText('tamper radio', 'correct horse battery staple words');
+  const frames = bleEncode(sealed);
+  const bad = frames.slice(1);
+  if (bad.length) await assert.rejects(async () => bleDecode(bad), /Incomplete/);
+  const flip = frames[0].slice(0, -1) + (frames[0].slice(-1) === 'A' ? 'B' : 'A');
+  assert.throws(() => bleDecode([flip, ...frames.slice(1)]));
+  assert.throws(() => bleDecode(['HELLO']));
+  assert.throws(() => bleEncode('not-an-envelope'));
+  const other = bleEncode(await encryptText('other', 'correct horse battery staple words'));
+  assert.throws(() => bleDecode([frames[0], other[0]]));
+});
+
+test('NFC wraps short envelopes and refuses large ones', async () => {
+  const small = await encryptText('hi', 'four uncommon private words here');
+  assert.equal(nfcWrap(small), small);
+  assert.ok(small.length <= NFC_MAX);
+  const big = await encryptText('x'.repeat(8000), 'four uncommon private words here');
+  assert.throws(() => nfcWrap(big), /Too big for NFC/);
+  assert.throws(() => nfcWrap('XM0.not'), TypeError);
 });

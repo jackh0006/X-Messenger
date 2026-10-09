@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-let pendingText = '', currentPayload = '', scanning = false, scanTimer;
+let pendingText = '', currentPayload = '', currentVia = 'qr', scanning = false, scanTimer;
 const $ = (s) => document.querySelector(s);
 const { encryptText, decryptText } = XMessengerCrypto;
 const donations = [
@@ -39,7 +39,88 @@ function clearClipboardLater(label) {
   setTimeout(async () => { try { await navigator.clipboard.writeText(''); } catch {} }, 30000);
 }
 function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date()); }
-function addMessage(text, direction = 'outgoing') { const article = document.createElement('article'); article.className = `message ${direction}`; const bubble = document.createElement('div'); bubble.className = 'message-bubble'; bubble.append(document.createTextNode(text)); const stamp = document.createElement('time'); stamp.textContent = `${timeNow()}${direction === 'outgoing' ? '  ✓' : ''}`; bubble.append(stamp); article.append(bubble); $('#messages').querySelector('.welcome-card')?.remove(); $('#messages').append(article); $('#messages').scrollTop = $('#messages').scrollHeight; }
+// Session message store (1.0.8). Plaintext lives ONLY here, in this page.
+// Lock, close, background-clear, or Clear chat wipes it. Nothing persists.
+const chatStore = { list: [], seq: 0 };
+let chatFilter = '', selectMode = false;
+const selectedIds = new Set();
+function chatEntry(dir, text, opts = {}) {
+  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0 };
+  chatStore.list.push(entry);
+  if (entry.viewOnce) setTimeout(() => deleteMessage(entry.id, true), 30000);
+  return entry;
+}
+function deleteMessage(id, silent) {
+  const i = chatStore.list.findIndex(m => m.id === id);
+  if (i === -1) return false;
+  chatStore.list[i].text = ''; chatStore.list[i].sealed = '';
+  chatStore.list.splice(i, 1); selectedIds.delete(id);
+  renderChat();
+  if (!silent) { try { $('#chatStatus').textContent = 'Message deleted from this device.'; } catch {} }
+  return true;
+}
+function clearChat(confirmed) {
+  if (!chatStore.list.length) return;
+  if (!confirmed && !confirm('Delete all messages in this session from this device? This cannot be undone.')) return;
+  for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
+  chatStore.list.length = 0; selectedIds.clear(); chatFilter = '';
+  try { $('#chatSearch').value = ''; } catch {}
+  renderChat();
+}
+function wipeSession() {
+  for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
+  chatStore.list.length = 0; selectedIds.clear(); chatFilter = ''; selectMode = false;
+  try { $('#chatSearch').value = ''; updateSelectBar(); } catch {}
+  renderChat();
+}
+function renderChat() {
+  const box = $('#messages'); if (!box) return;
+  box.replaceChildren();
+  const q = chatFilter.trim().toLowerCase();
+  const items = q ? chatStore.list.filter(m => m.text.toLowerCase().includes(q)) : chatStore.list;
+  if (!chatStore.list.length) {
+    const w = document.createElement('div'); w.className = 'welcome-card';
+    w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
+    box.append(w); updateSelectBar(); return;
+  }
+  if (q) {
+    const n = document.createElement('div'); n.className = 'msg-count'; n.id = 'chatStatus';
+    n.textContent = `${items.length} of ${chatStore.list.length} match`; box.append(n);
+  }
+  for (const m of items) {
+    const article = document.createElement('article'); article.className = `message ${m.dir === 'incoming' ? 'incoming' : 'outgoing'}`; article.dataset.mid = m.id;
+    const bubble = document.createElement('div'); bubble.className = 'message-bubble';
+    if (selectMode) {
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'msg-select'; cb.checked = selectedIds.has(m.id);
+      cb.setAttribute('aria-label', 'Select message');
+      cb.onchange = () => { cb.checked ? selectedIds.add(m.id) : selectedIds.delete(m.id); updateSelectBar(); };
+      bubble.append(cb);
+    }
+    if (m.sealedOnly) {
+      const lock = document.createElement('button'); lock.className = 'sealed-open'; lock.textContent = `🔒 sealed envelope${m.via ? ` (${m.via})` : ''} — tap to open`;
+      lock.onclick = () => openEnvelope(m.id);
+      bubble.append(lock);
+    } else {
+      bubble.append(document.createTextNode(m.text));
+    }
+    const stamp = document.createElement('time');
+    stamp.textContent = `${new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date(m.ts))}${m.dir === 'outgoing' ? '  ✓' : ''}${m.viewOnce ? '  👁 once' : ''}${m.via ? `  ${m.via}` : ''}`;
+    bubble.append(stamp); article.append(bubble);
+    const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = '×'; del.setAttribute('aria-label', 'Delete this message');
+    del.onclick = () => deleteMessage(m.id);
+    article.append(del); box.append(article);
+  }
+  box.scrollTop = box.scrollHeight; updateSelectBar();
+}
+function updateSelectBar() {
+  try {
+    $('#selCount').textContent = selectMode ? `${selectedIds.size} selected` : '';
+    $('#delSelected').style.display = selectMode ? '' : 'none';
+    $('#expSelected').style.display = selectMode ? '' : 'none';
+    $('#cancelSelect').style.display = selectMode ? '' : 'none';
+  } catch {}
+}
+function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
 function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
@@ -58,12 +139,44 @@ try {
   hv.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:12px';
   hv.innerHTML = '<input id="highValue" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>High-value text</strong> (like keys or seeds): require 20+ characters, use once, tell in person, shield the screen, delete after.</span>';
   $('#sealTransfer').before(hv);
+  const vo = document.createElement('label');
+  vo.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px';
+  vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
+  $('#sealTransfer').before(vo);
 } catch {}
-$('#sealTransfer').onclick = async () => { let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; } catch {} addMessage(text); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#sealTransfer').onclick = async () => { let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
 $('#openReceive').onclick = () => openModal('#receiveDialog');
-$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const text = await decryptText($('#payloadInput').value.trim(), phrase); phrase = ''; addMessage(text, 'incoming'); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
+$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
 $('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
+// NFC / Bluetooth send buttons (1.0.8). Added only when the platform can do it.
+try {
+  const row = document.querySelector('#transferDialog .export-row');
+  if (row) {
+    const mk = (id, label, title) => { const b = document.createElement('button'); b.id = id; b.textContent = label; b.title = title; row.append(b); return b; };
+    if (nfcAvailable()) {
+      const b = mk('nfcSend', 'Send via NFC', 'Tap phones / write tag. Small envelopes only.');
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await nfcWrite(currentPayload); currentVia = 'nfc'; $('#payloadSize').textContent += ' — sent via NFC (phrase still required separately)'; }
+        catch (e) { $('#payloadSize').textContent = `NFC failed: ${(e && e.message) || e}. Use QR or file.`; }
+        finally { b.disabled = false; }
+      };
+    }
+    if (bleAvailable()) {
+      const b = mk('bleSend', 'Send via Bluetooth', 'Encrypted BLE transfer to a nearby X Messenger.');
+      b.onclick = async () => {
+        b.disabled = true;
+        try { await bleSend(currentPayload, (i, n) => { $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`; }); currentVia = 'ble'; $('#payloadSize').textContent += ' — sent via Bluetooth (phrase still required separately)'; }
+        catch (e) { $('#payloadSize').textContent = `Bluetooth failed: ${(e && e.message) || e}. Use QR or file.`; }
+        finally { b.disabled = false; }
+      };
+    }
+    const note = document.createElement('p'); note.className = 'subtle';
+    note.textContent = 'Radio is hostile: anyone nearby can record it. XM1 encryption is the only protection — never send the phrase over NFC/Bluetooth/QR.';
+    row.after(note);
+  }
+} catch {}
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#showSecurity').onclick = () => openModal('#securityDialog'); $('#learnMore').onclick = () => openModal('#whyDialog'); $('#showAbout').onclick = () => openModal('#aboutDialog'); $('#showDonate').onclick = () => openModal('#donateDialog'); $('#openDonate').onclick = () => { closeAll(); openModal('#donateDialog'); };
 // Keep the in-app summary focused on properties the application can verify.
@@ -82,9 +195,55 @@ async function scanLoop() { const video = $('#scanner'), canvas = document.creat
 async function startScanner() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
 function stopScanner() { scanning = false; cancelAnimationFrame(scanTimer); const stream = $('#scanner').srcObject; if (stream) stream.getTracks().forEach(t => t.stop()); $('#scanner').srcObject = null; }
 $('#startCamera').onclick = startScanner;
+// NFC / Bluetooth receive buttons (1.0.8).
+try {
+  const box = document.querySelector('#receiveDialog .scan-box');
+  if (box) {
+    if (nfcAvailable()) {
+      const b = document.createElement('button'); b.id = 'nfcReceive'; b.textContent = 'Tap NFC tag';
+      b.onclick = () => { $('#receiveStatus').textContent = 'Hold phones together…'; nfcReadOnce(t => { $('#payloadInput').value = t; currentVia = 'nfc'; $('#receiveStatus').textContent = 'NFC envelope received. Enter the phrase to decrypt.'; }); };
+      box.append(b);
+    }
+    if (bleAvailable()) {
+      const b = document.createElement('button'); b.id = 'bleReceive'; b.textContent = 'Listen via Bluetooth';
+      let stop = null;
+      b.onclick = () => {
+        if (stop) { stop(); stop = null; b.textContent = 'Listen via Bluetooth'; return; }
+        b.textContent = 'Stop listening'; $('#receiveStatus').textContent = 'Waiting for a nearby X Messenger… (90s)';
+        stop = bleListen(t => { $('#payloadInput').value = t; currentVia = 'ble'; $('#receiveStatus').textContent = 'Bluetooth transfer complete. Enter the phrase to decrypt.'; stop = null; b.textContent = 'Listen via Bluetooth'; }, n => { $('#receiveStatus').textContent = `Bluetooth: ${n} frames…`; });
+      };
+      box.append(b);
+    }
+    if (!nfcAvailable() && !bleAvailable()) {
+      const p = document.createElement('p'); p.className = 'subtle';
+      p.textContent = 'NFC/Bluetooth need the Android app (native radio). This browser has neither — use camera or paste.';
+      box.append(p);
+    }
+  }
+} catch {}
 const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join(' '); $('#fingerprint').textContent = id.toUpperCase(); $('#deviceId').textContent = `ID ${id.slice(0, 9).toUpperCase()}`; $('#copyFingerprint').onclick = async () => { try { await navigator.clipboard.writeText(id.toUpperCase()); clearClipboardLater(); } catch {} };
 const msgCount = document.createElement('div'); msgCount.id = 'msgCount'; msgCount.className = 'msg-count'; msgCount.textContent = '0 / 900';
 try { $('#messageInput').after(msgCount); } catch {}
+// Chat toolbar: search this session, multi-select, clear chat (1.0.8).
+try {
+  const bar = document.createElement('div'); bar.id = 'chatBar'; bar.className = 'chat-bar';
+  bar.innerHTML = '<input id="chatSearch" type="search" placeholder="Search this session…" autocomplete="off"><span id="selCount" class="msg-count"></span><button id="toggleSelect" class="icon-button" title="Select messages">☑</button><button id="delSelected" class="icon-button" title="Delete selected" style="display:none">🗑</button><button id="expSelected" class="icon-button" title="Export selected sealed envelopes" style="display:none">⤓</button><button id="cancelSelect" class="icon-button" title="Cancel selection" style="display:none">✕</button><button id="clearChat" class="icon-button" title="Delete all session messages">🧹</button>';
+  $('#messages').before(bar);
+  $('#chatSearch').addEventListener('input', e => { chatFilter = e.target.value; renderChat(); });
+  $('#toggleSelect').onclick = () => { selectMode = !selectMode; selectedIds.clear(); renderChat(); };
+  $('#cancelSelect').onclick = () => { selectMode = false; selectedIds.clear(); renderChat(); };
+  $('#delSelected').onclick = () => { if (!selectedIds.size) return; if (!confirm(`Delete ${selectedIds.size} selected message(s) from this device?`)) return; [...selectedIds].forEach(id => deleteMessage(id, true)); selectedIds.clear(); renderChat(); };
+  $('#expSelected').onclick = () => {
+    const envs = chatStore.list.filter(m => selectedIds.has(m.id) && m.sealed).map(m => m.sealed);
+    if (!envs.length) { $('#selCount').textContent = 'No sealed envelopes selected'; return; }
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify({ format: 'x-messenger-envelopes-v1', exportedAt: new Date().toISOString(), envelopes: envs }, null, 2)], { type: 'application/json' })), download: `x-messenger-envelopes-${Date.now()}.json` });
+    link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  };
+  $('#clearChat').onclick = () => clearChat(false);
+  const chatCss = document.createElement('style');
+  chatCss.textContent = '.chat-bar{display:flex;gap:6px;align-items:center;padding:8px 30px 0}.chat-bar input{flex:1;padding:8px 10px;border:1px solid var(--line,#e6ebf1);border-radius:9px;background:transparent;color:inherit;font:inherit}#toggleSelect.on{background:#e6f8f3}.msg-del{border:0;background:transparent;color:#9aa7b6;font-size:16px;cursor:pointer;align-self:flex-start}.msg-select{width:auto;margin-right:8px}';
+  document.head.append(chatCss);
+} catch {}
 function updateMsgCount() { try { const n = $('#messageInput').value.length; msgCount.textContent = `${n} / 900`; msgCount.style.color = n > 900 ? '#c85360' : ''; } catch {} }
 $('#messageInput').addEventListener('input', updateMsgCount); updateMsgCount();
 $('#messageInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#sendMessage').click(); } });
@@ -117,6 +276,101 @@ function renderProfiles() { recipientList.replaceChildren(); const saved = profi
 $('#saveProfile').onclick = () => { const name = $('#profileName').value.trim().slice(0, 40), note = $('#profileNote').value.trim().slice(0, 120); if (!name) { $('#profileName').setCustomValidity('Give this local profile a name.'); $('#profileName').reportValidity(); return; } const saved = profiles(); if (saved.length >= 100) { $('#profileName').setCustomValidity('Too many local recipients (max 100). Delete one first.'); $('#profileName').reportValidity(); return; } if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) { $('#profileName').setCustomValidity('That name already exists locally.'); $('#profileName').reportValidity(); return; } const profile = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, name, note }; saved.push(profile); saveProfiles(saved); renderProfiles(); profileDialog.close(); $('#profileName').value = ''; $('#profileNote').value = ''; activateProfile(profile); };
 $('#newTransfer').onclick = startChat;
 renderProfiles();
+
+// NFC + Bluetooth transports (1.0.8). The radio is hostile: anyone nearby
+// can sniff or relay it. XM1 authenticated encryption is the ONLY security —
+// proximity is never authentication, and the phrase still travels separately.
+const { bleEncode, bleDecode, nfcWrap, NFC_MAX } = XMessengerCrypto;
+const XMSG_SVC = '9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6c';
+const XMSG_TX = '9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6d';
+const XMSG_RX = '9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6e';
+const nfcPlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NfcPlugin) || null;
+const blePlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BlePlugin) || null;
+function nfcAvailable() { return !!nfcPlugin() || ('NDEFReader' in window); }
+function bleAvailable() { return !!blePlugin() || ('bluetooth' in navigator); }
+async function nfcWrite(payload) {
+  const sealed = nfcWrap(payload);
+  const p = nfcPlugin();
+  if (p) { await p.writeTag({ payload: sealed }); return; }
+  const r = new NDEFReader();
+  await r.write({ records: [{ recordType: 'mime', mediaType: 'application/x-xmessenger', data: new TextEncoder().encode(sealed) }] });
+}
+function nfcReadOnce(onPayload) {
+  const p = nfcPlugin();
+  if (p) { p.readTag().then(r => onPayload(r.payload)).catch(e => { $('#receiveStatus').textContent = (e && e.message) || 'NFC read failed.'; }); return; }
+  const r = new NDEFReader();
+  r.onreading = event => {
+    for (const rec of event.message.records) {
+      try {
+        let bytes = new Uint8Array(rec.data);
+        // Tolerate well-known Text records (status + language prefix).
+        if (rec.recordType === 'text' && bytes.length > 1) {
+          const langLen = bytes[0] & 0x3F;
+          bytes = bytes.slice(1 + langLen);
+        }
+        const t = new TextDecoder().decode(bytes);
+        if (t.startsWith('XM1.')) { onPayload(t); return; }
+      } catch {}
+    }
+    $('#receiveStatus').textContent = 'No X Messenger envelope on that tag.';
+  };
+  r.scan().catch(() => { $('#receiveStatus').textContent = 'NFC unavailable or denied. Use QR or paste instead.'; });
+}
+async function bleConnect() {
+  const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [XMSG_SVC] }], optionalServices: [XMSG_SVC] });
+  const server = await device.gatt.connect();
+  return { device, server, svc: await server.getPrimaryService(XMSG_SVC) };
+}
+async function bleSend(payload, onProgress) {
+  const frames = bleEncode(payload);
+  const p = blePlugin();
+  if (p) { await p.sendFrames({ frames }); return; }
+  const { device, svc } = await bleConnect();
+  try {
+    const rx = await svc.getCharacteristic(XMSG_RX);
+    const enc = new TextEncoder();
+    for (let i = 0; i < frames.length; i++) {
+      await rx.writeValueWithResponse(enc.encode(frames[i]));
+      onProgress(i + 1, frames.length);
+    }
+  } finally { try { device.gatt.disconnect(); } catch {} }
+}
+function bleListen(onPayload, onProgress) {
+  const p = blePlugin();
+  if (p) {
+    let alive = true;
+    const poll = async () => {
+      if (!alive) return;
+      try {
+        const r = await p.pollIncoming();
+        if (r && r.payload) { onPayload(r.payload); return; }
+      } catch {}
+      setTimeout(poll, 1200);
+    };
+    poll();
+    return () => { alive = false; };
+  }
+  let stopped = false, got = [];
+  navigator.bluetooth.requestDevice({ filters: [{ services: [XMSG_SVC] }], optionalServices: [XMSG_SVC] })
+    .then(d => d.gatt.connect().then(async server => {
+      const svc = await server.getPrimaryService(XMSG_SVC);
+      const tx = await svc.getCharacteristic(XMSG_TX);
+      await tx.startNotifications();
+      const timer = setTimeout(() => { stopped = true; try { server.disconnect(); } catch {} }, 90000);
+      tx.addEventListener('characteristicvaluechanged', ev => {
+        if (stopped) return;
+        got.push(new TextDecoder().decode(ev.target.value));
+        onProgress(got.length, 0);
+        try {
+          const payload = bleDecode(got);
+          clearTimeout(timer); stopped = true;
+          try { server.disconnect(); } catch {}
+          onPayload(payload);
+        } catch (e) { if (!/Incomplete/.test(e.message || '')) { clearTimeout(timer); stopped = true; } }
+      });
+    })).catch(() => { if (!stopped) $('#receiveStatus').textContent = 'Bluetooth unavailable, denied, or no X Messenger nearby.'; });
+  return () => { stopped = true; };
+}
 
 // Settings and backups are intentionally local. Export is explicit and restore
 // accepts only the small versioned X Messenger backup format.
@@ -163,11 +417,19 @@ function saveSettings(next) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(
 applySettings();
 $('#themeSetting').onchange = event => saveSettings({ ...readSettings(), theme: event.target.value });
 $('#fontSetting').oninput = event => saveSettings({ ...readSettings(), fontSize: Number(event.target.value) });
-function localBackup() { const data = {}; [PROFILE_KEY, SETTINGS_KEY].forEach(key => { const value = localStorage.getItem(key); if (value !== null) data[key] = value; }); return { format: 'x-messenger-local-backup-v1', exportedAt: new Date().toISOString(), data }; }
-$('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded. Store it securely.'; };
+function localBackup() { const data = {}; [PROFILE_KEY, SETTINGS_KEY].forEach(key => { const value = localStorage.getItem(key); if (value !== null) data[key] = value; }); const envelopes = chatStore.list.filter(m => m.sealed).map(m => ({ sealed: m.sealed, via: m.via, ts: m.ts })); return { format: 'x-messenger-local-backup-v2', exportedAt: new Date().toISOString(), data, envelopes }; }
+function openEnvelope(id) {
+  const m = chatStore.list.find(x => x.id === id);
+  if (!m || !m.sealed) return;
+  currentVia = m.via || 'qr';
+  $('#payloadInput').value = m.sealed;
+  openModal('#receiveDialog');
+  $('#receiveStatus').textContent = 'Sealed envelope loaded. Enter the phrase to decrypt.';
+}
+$('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded (labels, settings, sealed envelopes — never plaintext or phrases). Store it securely.'; };
 $('#restoreData').onclick = () => $('#restoreFile').click();
-$('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 200 * 1024) throw new Error('Backup too large (max 200KB).'); const backup = JSON.parse(await file.text()); if (backup.format !== 'x-messenger-local-backup-v1' || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } renderProfiles(); applySettings(); $('#settingsStatus').textContent = 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
-$('#deleteData').onclick = () => { if (!confirm('Delete all local X Messenger recipient labels and preferences from this device? This cannot be undone.')) return; [PROFILE_KEY, SETTINGS_KEY].forEach(key => localStorage.removeItem(key)); activeProfileId = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = 'Local X Messenger data deleted.'; };
+$('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !e.sealed.startsWith('XM1.') || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
+$('#deleteData').onclick = () => { if (!confirm('Delete ALL X Messenger data from this device (labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; wipeSession(); currentPayload = ''; [PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
 $('#openSecurityGuide').onclick = () => { settingDialog.close(); openModal('#securityDialog'); };
 function validDomainUi(d) { return typeof d === 'string' && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\.[a-z]{2,}$/i.test(d.trim()); }
 async function refreshConn() {

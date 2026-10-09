@@ -24,11 +24,14 @@ test('web bundle has no remote network calls (same-origin /api/info only)', () =
   }
 });
 
-test('android requests camera only and stays offline', () => {
+test('android requests camera/nfc/ble only and stays offline', () => {
   const manifest = read('android/app/src/main/AndroidManifest.xml');
   assert.ok(manifest.includes('android.permission.CAMERA'), 'camera permission required for QR scan');
+  assert.ok(manifest.includes('android.permission.NFC'), 'NFC permission required for tag handoff');
+  assert.ok(manifest.includes('android.permission.BLUETOOTH_ADVERTISE'), 'BLE advertise required for peripheral');
   assert.ok(!manifest.includes('android.permission.INTERNET'), 'internet permission must be absent');
   assert.ok(!manifest.includes('android.permission.ACCESS_NETWORK_STATE'), 'network-state permission must be absent');
+  assert.ok(!manifest.includes('ACCESS_FINE_LOCATION') && !manifest.includes('ACCESS_COARSE_LOCATION'), 'location must be absent (neverForLocation scan)');
   assert.ok(manifest.includes('android:allowBackup="false"'), 'backups must stay disabled');
   assert.ok(manifest.includes('android:usesCleartextTraffic="false"'), 'cleartext must stay disabled');
 });
@@ -83,4 +86,33 @@ test('local CA fixes browser warning without insecure flags', () => {
 test('service worker never caches remote content', () => {
   const sw = read('service-worker.js');
   assert.ok(!/fetch\(['"]https?:/.test(sw), 'service worker must not fetch remote');
+});
+
+test('NFC/Bluetooth transports keep XM1 as the only security', () => {
+  const js = read('app.js');
+  const core = read('core.js');
+  assert.ok(js.includes('Radio is hostile'), 'UI must state radio is hostile');
+  assert.ok(js.includes('proximity is never authentication') || js.includes('never authentication'), 'UI must deny proximity trust');
+  assert.ok(core.includes('bleEncode') && core.includes('bleDecode'), 'core must carry BLE frame codec');
+  assert.ok(core.includes('nfcWrap') && core.includes('NFC_MAX'), 'core must gate NFC size');
+  assert.ok(!/createBond|BLUETOOTH_ADMIN|setPin|insecure/i.test(js), 'no classic-BT pairing bypasses');
+});
+
+test('session messages support delete, backup v2 carries sealed envelopes only', () => {
+  const js = read('app.js');
+  assert.ok(js.includes('deleteMessage') && js.includes('clearChat') && js.includes('wipeSession'), 'store must delete/clear/wipe');
+  assert.ok(js.includes('x-messenger-local-backup-v2'), 'backup must be v2 with envelopes');
+  assert.ok(js.includes('x-messenger-why-seen-v1') && js.includes('removeItem'), 'delete-all must include first-run flag');
+  assert.ok(js.includes('chatSearch') && js.includes('toggleSelect'), 'search + select UI must exist');
+});
+
+test('native NFC/BLE plugins stay offline and registered', () => {
+  const main = read('android/app/src/main/java/com/jackh0006/xmessenger/MainActivity.java');
+  const nfc = read('android/app/src/main/java/com/jackh0006/xmessenger/NfcPlugin.java');
+  const ble = read('android/app/src/main/java/com/jackh0006/xmessenger/BlePlugin.java');
+  assert.ok(main.includes('registerPlugin(NfcPlugin.class)') && main.includes('registerPlugin(BlePlugin.class)'), 'plugins must be registered');
+  assert.ok(!/INTERNET|HttpURLConnection|OkHttp|Socket/.test(nfc + ble), 'native radio code must not open sockets');
+  assert.ok(nfc.includes('XM1.') && nfc.includes('800'), 'NFC plugin must gate sealed size');
+  assert.ok(ble.includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6c'), 'BLE service UUID must match web central');
+  assert.ok(read('app.js').includes('9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6c'), 'web UUID must match native peripheral');
 });
