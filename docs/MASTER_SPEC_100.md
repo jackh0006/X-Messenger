@@ -1,6 +1,7 @@
 # X Messenger — master specification (100 points)
 
-Single source of truth. Status per item as of `security-remediation`.
+Single source of truth for the REBUILD track. Current release is the v1.0.5
+legacy app (MIT snapshot, tag v1.0.5); statuses below track the rebuild only.
 Legend: `[x]` done and verified · `[~]` partially done · `[ ]` not started.
 `QUARANTINED` means code exists but must never ship (homemade crypto).
 

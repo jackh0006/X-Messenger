@@ -2,7 +2,7 @@
 
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-These are the exact versions the preview packages were built and verified
+These are the exact versions the rebuild-track packages were built and verified
 with. Pin them; do not "just use latest" for release builds.
 
 ## Proven versions (Ubuntu 24.04, x86_64)
@@ -57,6 +57,26 @@ bash packaging/build-deb.sh
   build/app/outputs/apk/release/app-release.apk
 sha256sum dist/*.deb build/app/outputs/apk/release/*.apk
 ```
+
+## v1.0.5 legacy app environment (Node + Capacitor)
+
+Proven versions: **Node v24.21.0, npm 12.0.2** (other Node 22+ likely work;
+CI for this tree is the 18 Node checks, not Flutter).
+
+```bash
+git switch --detach v1.0.5
+npm ci
+npm test            # 18 checks, all must pass
+npm run build:web
+bash scripts/build-deb.sh X-Messenger-Linux-amd64.deb
+npm run android:apk # needs the same Android SDK as above (Capacitor sync + assembleDebug)
+sha256sum -c SHA256SUMS   # after refreshing it for the new file names
+```
+
+DEB control lives in `packaging/debian/DEBIAN/control`
+(Maintainer: jackh0006 <jackh109867@gmail.com>). Android shell lives in
+`android/` (Capacitor). Never commit `node_modules/`, `android/.gradle/`,
+`android/app/build/`, or `android/local.properties`.
 
 ## Your credentials on the VPS
 

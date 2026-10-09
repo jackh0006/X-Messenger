@@ -3,101 +3,99 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Strict boundary](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-security.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-security.yml)
 [![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml)
-[![Preview release](https://img.shields.io/github/v/release/jackh0006/X-Messenger?include_prereleases&label=preview)](https://github.com/jackh0006/X-Messenger/releases)
+[![Release](https://img.shields.io/github/v/release/jackh0006/X-Messenger?include_prereleases&label=release)](https://github.com/jackh0006/X-Messenger/releases)
 ![Android](https://img.shields.io/badge/Android-arm64-3DDC84?logo=android&logoColor=white)
 ![Linux](https://img.shields.io/badge/Ubuntu-amd64-E95420?logo=ubuntu&logoColor=white)
 
 **Offline-first secret courier.** Move small, high-value secrets between trusted
-people with no accounts, no servers, and no internet — over QR codes, NFC, or
-one encrypted file you carry yourself. One shared Flutter UI on Android and
-Ubuntu, one Rust security core, AGPL-3.0 licensed, fully open source.
+people with no accounts and no servers — seal here, show a QR code, decrypt
+offline. No SIM, no phone number, no cloud. Fully open source.
 
-> **Status: EXPERIMENTAL PREVIEW.** The shared UI shell builds and installs on
-> both platforms, but there is deliberately **no usable vault, pairing, or
-> transfer yet**. Do not store seed phrases, private keys, or crown-jewel
-> material in this build. It must not be called unhackable, military-grade, or
-> Signal-compatible. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) and
+> **Status: PRERELEASE.** Current release is **v1.0.5** (legacy app, for
+> tasting). It is not audited: treat it as a feature demo, not a hardened
+> build. Never store crown-jewel secrets without your own review. Nothing
+> here is unhackable, military-grade, or a finished Signal replacement.
+> See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) and
 > [docs/RISK_POLICY.md](docs/RISK_POLICY.md).
 
-## How it works
+## The v1.0.5 app (current)
 
-Two devices never touch a network. The sender's Rust core encrypts the secret
-into opaque AEAD ciphertext packets; the untrusted carrier — animated QR
-frames, an NFC tap, or a `.courier` file on USB — moves only ciphertext.
-The receiver's core rejects anything malformed, replayed, or tampered and
-fails closed with a neutral message.
+- **Linux:** Node.js GUI + CLI. The GUI runs a loopback-only page on your own
+  machine (`https://127.0.0.1:8444`) — chats, QR show/scan, high-value phrase
+  mode, vault, donate and security dialogs. Nothing leaves the device.
+- **Android:** Capacitor shell of the same app (camera for QR scan).
+- **Crypto:** JavaScript core (`core.js`) — AES-GCM sealed envelopes, safety
+  phrases, fingerprint compare. Demo-grade: it has never passed an
+  independent audit.
+- **Tests:** 18 Node checks (`npm test`) cover crypto vectors, offline
+  posture, and UI invariants.
 
-- **Identity is keys only.** No phone number, email, server account, or contact
-  upload. Pairing is a face-to-face QR exchange plus a 6-word safety phrase
-  compared on both screens.
-- **The channel is untrusted by design.** Cameras, sniffers, and stolen USB
-  sticks are in the threat model ([docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)).
-  Security comes from the encryption inside, never from the carrier.
-- **Planned primitives (not yet implemented):** XChaCha20-Poly1305 AEAD,
-  Argon2id + hardware secret key hierarchy, HPKE file envelopes, and a
-  reviewed session library behind our own protocol interface —
-  see [docs/PROTOCOL.md](docs/PROTOCOL.md).
+## Try v1.0.5
+
+```bash
+# 1. Download from the v1.0.5 release page and verify first:
+sha256sum -c SHA256SUMS
+# 2. Install the Debian package (needs nodejs + openssl):
+sudo dpkg -i X-Messenger-Linux-amd64.deb
+# 3. Launch: x-messenger  (or: x-messenger-cli for the terminal)
+# Android: install X-Messenger-Android-arm64.apk and compare its permission
+# list against the release notes before trusting it.
+```
+
+Downloads: [releases](https://github.com/jackh0006/X-Messenger/releases)
+(all prerelease until an independent audit passes).
 
 ## How X Messenger differs from Signal, Telegram, and WhatsApp
 
 Architecture facts, verified against each project's public documentation.
-"Planned" means designed and specified, not built — the honest state of this
-preview.
+"Design" means where this project is headed; v1.0.5 is the tasting step.
 
-| Property | Signal | Telegram | WhatsApp | X Messenger (goal) |
+| Property | Signal | Telegram | WhatsApp | X Messenger (design) |
 | --- | --- | --- | --- | --- |
-| Identity | Phone number required | Account ID required | Phone number required | **Keys only, no number** (planned) |
-| Transport | Central servers | Central servers | Central servers | **No servers; QR / NFC / file only** |
+| Identity | Phone number required | Account ID required | Phone number required | **Keys only, no number** |
+| Transport | Central servers | Central servers | Central servers | **No servers; QR / file / local carriers** |
 | Works with zero internet | No | No | No | **Yes, by construction** |
-| Default chats E2E encrypted | Yes (Signal protocol) | **No** (cloud chats; optional Secret Chats) | Yes (Signal protocol) | Planned AEAD sessions |
-| Custom crypto protocol | No (published Signal protocol) | Yes (custom MTProto) | No (Signal protocol) | **No — reviewed primitives only** (rule R2) |
+| Default chats E2E encrypted | Yes (Signal protocol) | **No** (cloud chats; optional Secret Chats) | Yes (Signal protocol) | Sealed offline envelopes |
+| Custom crypto protocol | No (published Signal protocol) | Yes (custom MTProto) | No (Signal protocol) | **No custom crypto in the goal** |
 | Operator must be trusted with metadata | Yes | Yes | Yes (Meta) | **No operator exists** |
-| Fully open source client + server need | Client open; server centralized | Clients open; server proprietary | Proprietary | **AGPL-3.0, reproducible builds planned** |
-| Contact discovery without uploading address book | Usernames (no bulk upload needed) | Address-book upload standard | Address-book upload standard | **Face-to-face pairing, nothing uploaded** |
+| License | GPL (client) | Clients open; server proprietary | Proprietary | **Open source (v1.0.5: MIT; current tree: AGPL-3.0)** |
 
-What X Messenger does that the others structurally cannot: operate where there
-is no network at all, leave no metadata with any operator (there is none), and
-prove its offline boundary in CI — `scripts/strict-check.sh` plus the
-`aapt2` merged-manifest gate reject any network permission or socket code.
-
-## What works today vs roadmap
-
-| Area | Preview (`v1.0.0-preview.1`) | Roadmap |
-| --- | --- | --- |
-| Shared Android + Ubuntu UI | ✅ Same source, 4-tab shell | Full chat, vault, scan flows |
-| Strict no-network build | ✅ CI gate + release APK verified clean | Reproducible signed builds, SBOM |
-| Encrypted vault | ❌ Placeholder screen | Rust core, Argon2id, duress slots |
-| Pairing + sessions | ❌ | Reviewed session library, safety phrase |
-| QR / NFC / file transport | ❌ | Strict parsers + fuzzing |
-| Independent audit | ❌ | Required before any stable release |
-
-## Try the preview
-
-```bash
-# Ubuntu amd64
-sudo dpkg -i X-Messenger-preview_Linux-amd64.deb
-x-messenger
-# Android arm64: install X-Messenger-preview_Android-arm64.apk, verify SHA256SUMS first
-```
-
-Downloads: [preview releases](https://github.com/jackh0006/X-Messenger/releases).
-Preview packages say EXPERIMENTAL and accept no real secrets.
+What this project does that the others structurally cannot: operate where
+there is no network at all, and leave no metadata with any operator — there
+is none. The `.github` CI gate plus the release checklist enforce the
+offline boundary on every change.
 
 ## Repository map
 
-- `app/` — shared Flutter Android/Linux interface (the release path).
-- `core/` — legacy Rust draft; not an approved security core.
-- `apps/` — legacy platform-specific draft UIs; not the release path.
+- `app/` — future shared Flutter interface (preview track, not released).
+- `core/` — future Rust core: quarantined drafts, never shipped
+  (see `core/QUARANTINE.md`).
+- `apps/` — legacy platform drafts; not the release path.
 - `docs/` — [threat model](docs/THREAT_MODEL.md),
   [protocol boundary](docs/PROTOCOL.md),
   [audit checklist](docs/AUDIT_CHECKLIST.md),
   [risk policy](docs/RISK_POLICY.md),
   [release process](docs/RELEASE_PROCESS.md),
+  [build environment](docs/BUILD_ENV.md),
+  [100-point roadmap](docs/MASTER_SPEC_100.md),
   [coding-agent guide](docs/AI_CONTINUATION.md).
-- `scripts/strict-check.sh` — offline boundary checks for manifests and UI.
+- `scripts/strict-check.sh` — offline boundary checks.
 - `SECURITY_REVIEW.md` — evidence-based release blockers.
 
-## Local checks (copy-paste)
+## Build v1.0.5 from source (copy-paste)
+
+```bash
+git clone https://github.com/jackh0006/X-Messenger.git
+cd X-Messenger
+git switch --detach v1.0.5   # exact released source, no later changes
+npm ci
+npm test                     # 18 checks, all must pass
+npm run build:web
+bash scripts/build-deb.sh X-Messenger-Linux-amd64.deb
+npm run android:apk          # needs Android SDK, see docs/BUILD_ENV.md
+```
+
+## Local checks (current tree)
 
 ```bash
 bash scripts/strict-check.sh
@@ -107,7 +105,8 @@ flutter analyze
 flutter test
 ```
 
-Contributions welcome under [CONTRIBUTING.md](CONTRIBUTING.md) (AGPL-3.0 terms).
+Contributions welcome under [CONTRIBUTING.md](CONTRIBUTING.md) (AGPL-3.0
+terms for the current tree; the v1.0.5 snapshot stays MIT as released).
 Report vulnerabilities privately per [SECURITY.md](SECURITY.md) — never post
 real phrases, keys, or message contents anywhere.
 
