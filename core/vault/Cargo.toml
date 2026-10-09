@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "x-messenger-vault"
+version = "0.1.0"
+edition = "2021"
+description = "X Messenger encrypted vault: Argon2id + XChaCha20-Poly1305 + BLAKE3 KDF. Audited crates only."
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/jackh0006/X-Messenger"
+
+[workspace]
+
+[dependencies]
+chacha20poly1305 = "=0.10.1"
+argon2 = "=0.5.3"
+blake3 = "=1.8.7"
+zeroize = { version = "=1.9.0", features = ["derive"] }
+getrandom = "=0.2.17"
+thiserror = "=1.0.69"
+
+[dev-dependencies]
+hex = "=0.4.3"

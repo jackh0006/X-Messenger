@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[package]
+name = "x-messenger-transport"
+version = "0.1.0"
+edition = "2021"
+description = "X Messenger offline transport: strict packets, QR fountain frames, NFC APDU codec. No network."
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/jackh0006/X-Messenger"
+
+[workspace]
+
+[dependencies]
+crc32fast = "=1.5.2"
+qrcodegen = "=1.8.0"
+rxing = "=0.9.3"
+base64 = "=0.22.1"
+thiserror = "=1.0.69"
+
+[dev-dependencies]
+hex = "=0.4.3"

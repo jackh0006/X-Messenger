@@ -45,14 +45,15 @@ XChaCha20-Poly1305, SHA-384/512 or BLAKE3, Argon2id. Audited libraries only
 - [ ] 30. Per-file keys, chunked AEAD, hash trees, padded sizes: not started.
 - [ ] 31. Fixed-size packet buckets incl. control messages: not started.
 - [ ] 32. Constant-time, zeroized memory, locked pages, clean logs, hardened flags: not started (rule documented).
-- [ ] 33. Hardware-wrapped + Argon2id keys, passphrase-first: not started.
+- [~] 33. Hardware-wrapped + Argon2id keys, passphrase-first: `core/vault` DONE (Argon2id 64MiB/t3/p4, XChaCha20 VMK wrap, duress slot tracked separately); hardware wrap: pending.
 - [ ] 34. Encrypted DB/media/filenames, key-deletion disappearing: not started.
 - [ ] 35. Swappable PQ (HQC backup) via version bumps: not started.
-- [ ] 36. Known-answer vectors, Wycheproof, sanitizers, CI fuzzing: not started.
+- [~] 36. Known-answer vectors, Wycheproof, sanitizers, CI fuzzing: vault + transport carry KAT-pinned params and 20 negative/round-trip tests in CI; Wycheproof/sanitizers/full fuzz: pending.
 
 ## E. QR, NFC, Bluetooth, offline paths (37-50)
 
-- [ ] 37-50. ALL not started: QR-hash bundle flow, animated QR fountain codes, NFC tap/HCE + hardware-key factor, BLE privacy + dirty-wire E2EE, Wi-Fi Aware/Direct handoff, opt-in mesh, mailbox tags, spam controls, USB/SD/sound/LoRa, honest delivery states, BLE-mesh audit, opt-in discovery.
+- [~] 37-38. QR-hash bundle flow DONE in `core/transport` (strict packets, 700B frames, any-order reassembly, QR encode via qrcodegen + decode via rxing, 4 KiB end-to-end test green); animated on-screen sequencing is UI-side: pending.
+- [ ] 39-50. NOT started: NFC tap/HCE + hardware-key factor, BLE privacy + dirty-wire E2EE, Wi-Fi Aware/Direct handoff, opt-in mesh, mailbox tags, spam controls, USB/SD/sound/LoRa, honest delivery states, BLE-mesh audit, opt-in discovery.
 
 ## F. Metadata and device safety (51-60)
 
