@@ -33,10 +33,14 @@ test('android requests camera only and stays offline', () => {
   assert.ok(manifest.includes('android:usesCleartextTraffic="false"'), 'cleartext must stay disabled');
 });
 
-test('linux server defaults to loopback 8443 with hardened headers', () => {
+test('linux server defaults to loopback 443 HTTPS separate window with hardened headers', () => {
   const server = read('server.js');
-  assert.ok(server.includes('8443'), 'default best port must include 8443');
-  assert.ok(server.includes('443'), 'VPS normal port 443 must be supported');
+  const cli = read('bin/cipherlink');
+  assert.ok(server.includes('443'), 'default HTTPS port must be 443');
+  assert.ok(cli.includes('443'), 'CLI default must be 443');
+  assert.ok(cli.includes('Choose another port'), 'CLI must prompt for another port when 443 is taken');
+  assert.ok(cli.includes('--app='), 'CLI must open a separate --app window, not a browser tab');
+  assert.ok(!/file:\/\//.test(cli), 'CLI must never use file:// (breaks CSP/WebCrypto)');
   assert.ok(server.includes("'loopback'"), 'default bind must be loopback');
   assert.ok(server.includes("minVersion: 'TLSv1.2'"), 'must require TLS 1.2+');
   assert.ok(server.includes('X-Content-Type-Options'), 'must send nosniff');

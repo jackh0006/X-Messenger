@@ -24,8 +24,9 @@ const domain = (process.env.X_MESSENGER_DOMAIN || prefs.domain || '').trim().toL
 if (bindMode === 'vps' && !validDomain(domain)) {
   throw new Error('VPS mode needs --domain msg.example.com with a valid public domain. Run: x-messenger setup');
 }
-// Default best port 8443 loopback/LAN (memorable alt-HTTPS). VPS default 443 (normal HTTPS).
-const DEFAULT_PORT = bindMode === 'vps' ? 443 : 8443;
+// Default 443 everywhere (normal HTTPS). If taken, bin/cipherlink asks for
+// another port before spawning; the increment below is only a safety net.
+const DEFAULT_PORT = 443;
 const requestedPort = Number.parseInt(process.env.X_MESSENGER_PORT || process.env.PORT || prefs.port || String(DEFAULT_PORT), 10);
 const firstPort = Number.isInteger(requestedPort) && requestedPort >= 1 && requestedPort <= 65535 ? requestedPort : DEFAULT_PORT;
 if (firstPort < 1024) console.warn(`Port ${firstPort} is privileged and needs root/capability (setcap or systemd AmbientCapabilities) or a 443→8443 proxy.`);
@@ -53,7 +54,7 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
       const certPem = fs.readFileSync(certPath, 'utf8');
       const cert = new (require('node:crypto').X509Certificate)(certPem);
       const info = {
-        version: '1.0.5', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
+        version: '1.0.6', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
         tls: { subject: cert.subject, issuer: cert.issuer, validFrom: cert.validFrom, validTo: cert.validTo, fingerprint256: cert.fingerprint256, san: cert.subjectAltName },
       };
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -101,7 +102,7 @@ server.on('listening', () => {
   if (process.env.X_MESSENGER_ENDPOINT_FILE) {
     fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint, { mode: 0o600 });
   }
-  console.log(`X Messenger 1.0.5 running at ${endpoint} [bind=${bindMode}]`);
+  console.log(`X Messenger 1.0.6 running at ${endpoint} [bind=${bindMode}]`);
   if (bindMode === 'lan') console.warn('LAN mode: observable encrypted TLS on this network (IP/port/sizes visible). Compare cert fingerprint in person.');
   if (bindMode === 'vps') console.warn('VPS mode: provider/DNS/network see domain+IP+sizes; message content stays XM1 end-to-end. Keep Cloudflare grey-cloud (DNS-only) for E2E.');
 });

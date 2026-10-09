@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MIT
 (function (root) {
-  const VERSION = '1.0.5';
+  const VERSION = '1.0.6';
   const ITERATIONS = 600000;
   const MAX_TEXT_CHARS = 8000;
   const MAX_PAYLOAD_CHARS = 32768;
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+  // Never silently replace malformed UTF-8 in decrypted content.  A malformed
+  // plaintext is an invalid transfer, not a message with substituted bytes.
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  // The largest bucket keeps the complete base64 transfer below the parser's
+  // hard size limit.  It also bounds PBKDF2/AEAD work on hostile input.
+  // Fixed buckets also reduce plaintext-length leakage (100-pt #31).
+  const PAD_BUCKETS = [256, 512, 1024, 2048, 4096, 8192, 16384];
   const b64url = (bytes) => {
     let binary = '';
     const chunk = 8192;
@@ -27,6 +33,27 @@
   };
   const randomBytes = (length) => crypto.getRandomValues(new Uint8Array(length));
 
+  function paddedPlaintext(text) {
+    const plain = encoder.encode(text);
+    const required = plain.length + 4;
+    const bucket = PAD_BUCKETS.find((size) => size >= required);
+    if (!bucket) throw new Error('Message is too long to seal.');
+    const out = randomBytes(bucket);
+    new DataView(out.buffer).setUint32(0, plain.length, false);
+    out.set(plain, 4);
+    plain.fill(0);
+    return out;
+  }
+
+  function unpadPlaintext(bytes) {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 4 || !PAD_BUCKETS.includes(bytes.length)) {
+      throw new Error('Unsupported transfer format.');
+    }
+    const length = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, false);
+    if (length > bytes.length - 4) throw new Error('Unsupported transfer format.');
+    return decoder.decode(bytes.subarray(4, 4 + length));
+  }
+
   async function keyFor(phrase, salt, usages) {
     const material = await crypto.subtle.importKey('raw', encoder.encode(phrase), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ITERATIONS }, material, { name: 'AES-GCM', length: 256 }, false, usages);
@@ -40,8 +67,15 @@
     const salt = randomBytes(16);
     const iv = randomBytes(12);
     const key = await keyFor(phrase, salt, ['encrypt']);
-    const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode('XMessenger/1') }, key, encoder.encode(text)));
-    return 'XM1.' + b64url(encoder.encode(JSON.stringify({ v: 1, kdf: 'PBKDF2-SHA256', i: ITERATIONS, s: b64url(salt), n: b64url(iv), c: b64url(encrypted) })));
+    const plain = paddedPlaintext(text);
+    try {
+      const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode('XMessenger/2') }, key, plain));
+      return 'XM1.' + b64url(encoder.encode(JSON.stringify({ v: 2, kdf: 'PBKDF2-SHA256', i: ITERATIONS, s: b64url(salt), n: b64url(iv), c: b64url(encrypted) })));
+    } finally {
+      plain.fill(0);
+      salt.fill(0);
+      iv.fill(0);
+    }
   }
 
   async function decryptText(payload, phrase) {
@@ -55,7 +89,7 @@
     } catch {
       throw new Error('Unsupported transfer format.');
     }
-    if (!data || data.v !== 1 || data.kdf !== 'PBKDF2-SHA256' || data.i !== ITERATIONS) throw new Error('Unsupported transfer format.');
+    if (!data || (data.v !== 1 && data.v !== 2) || data.kdf !== 'PBKDF2-SHA256' || data.i !== ITERATIONS) throw new Error('Unsupported transfer format.');
     if (typeof data.s !== 'string' || typeof data.n !== 'string' || typeof data.c !== 'string') throw new Error('Unsupported transfer format.');
     const salt = fromB64url(data.s);
     const iv = fromB64url(data.n);
@@ -63,8 +97,12 @@
     if (salt.length !== 16 || iv.length !== 12 || ciphertext.length === 0) throw new Error('Unsupported transfer format.');
     const key = await keyFor(phrase, salt, ['decrypt']);
     try {
-      const plain = decoder.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode('XMessenger/1') }, key, ciphertext));
-      return plain;
+      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(`XMessenger/${data.v}`) }, key, ciphertext));
+      try {
+        return data.v === 2 ? unpadPlaintext(plain) : decoder.decode(plain);
+      } finally {
+        plain.fill(0);
+      }
     } catch {
       throw new Error('Could not decrypt: incorrect phrase or altered / unsupported transfer.');
     } finally {
