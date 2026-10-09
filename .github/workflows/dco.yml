@@ -1,0 +1,36 @@
+name: DCO and licence headers
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require Signed-off-by on every commit
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          missing=0
+          for c in $(git rev-list "$base..$head"); do
+            git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$c" | grep -q . || {
+              echo "missing Signed-off-by: $c $(git log -1 --format=%s "$c")" >&2
+              missing=1
+            }
+          done
+          exit $missing
+      - name: Require SPDX identifier in new source files
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          bad=0
+          for f in $(git diff --name-only --diff-filter=A "$base" "$head" -- '*.rs' '*.dart' '*.kt' '*.sh' '*.py'); do
+            grep -q 'SPDX-License-Identifier' "$f" || { echo "missing SPDX header: $f" >&2; bad=1; }
+          done
+          exit $bad

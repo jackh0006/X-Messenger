@@ -1,0 +1,19 @@
+X Messenger — third-party licence summary (seed file, expanded by CI SBOM)
+
+This project is MIT licensed (see LICENSE). Dependencies below keep their
+own licences. Exact versions are pinned in Cargo.lock and app/pubspec.lock;
+full SBOMs are attached to release workflows.
+
+Runtime / UI
+- Flutter SDK (BSD-3-Clause) — https://github.com/flutter/flutter
+- Material Icons font (Apache-2.0) — bundled by Flutter, tree-shaken at build
+
+Rust core drafts (legacy, under review — see SECURITY_REVIEW.md)
+- All crates: see Cargo.lock; licences checked in CI by cargo-deny.
+  Rule: no copyleft-incompatible or unknown licences accepted.
+
+Android (legacy draft under apps/android)
+- Jetpack / Material components (Apache-2.0)
+
+Rule for contributors: every new dependency needs a written reason in
+DECISIONS.md (or the PR), a compatible licence, and a lockfile entry.

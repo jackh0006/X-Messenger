@@ -8,10 +8,18 @@ This project is fully open source. You may use, copy, modify, merge,
 publish, distribute, sublicense, and sell copies under the MIT terms.
 You must keep the copyright and licence notices in all copies.
 
-Contributions are licensed under the same MIT terms. By contributing you
-confirm you wrote the change or have the right to submit it, and you agree
-your contribution is MIT licensed (Developer Certificate of Origin).
+Contributions are licensed under the same MIT terms (inbound = outbound).
+Every commit must carry a `Signed-off-by` line (Developer Certificate of
+Origin, https://developercertificate.org). By signing off you confirm you
+wrote the change or have the right to submit it under MIT.
+
+Every new source file must start with an SPDX header, for example:
+`// SPDX-License-Identifier: MIT` (Rust/Dart/Kotlin) or
+`# SPDX-License-Identifier: MIT` (scripts/YAML where valid).
 
 Third-party code keeps its own licence. See THIRD_PARTY_LICENSES when
 present, plus Cargo.lock, pubspec.lock, and SBOM artifacts for the exact list.
-No contributor grants patent rights beyond what MIT implies. No warranty.
+Patent note: MIT has no explicit patent grant (unlike Apache-2.0). This is
+an accepted simplicity tradeoff, documented here. Changing licences later
+needs every contributor's consent, so MIT is locked by this notice.
+No warranty.
