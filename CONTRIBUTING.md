@@ -9,7 +9,7 @@ claims and release artifacts need a higher bar than ordinary application work.
    `docs/AI_CONTINUATION.md`.
 2. Work in a branch. Keep each change small and reviewable.
 3. Sign every commit: `git commit -s` (adds `Signed-off-by`; DCO is enforced
-   by CI). Put `SPDX-License-Identifier: MIT` at the top of new source files.
+   by CI). Put `SPDX-License-Identifier: AGPL-3.0-or-later` at the top of new source files.
 3. Never add network transport, telemetry, analytics, ads, crash reporting, or
    automatic update code to the strict build.
 4. Never invent a cryptographic protocol or change cryptographic dependencies

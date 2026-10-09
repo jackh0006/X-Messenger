@@ -2,24 +2,26 @@ X Messenger — copyright and licence notice
 
 Copyright (c) 2026 jackh0006 and contributors.
 Project: https://github.com/jackh0006/X-Messenger
-Licence: MIT License, see LICENSE.
+Licence: GNU Affero General Public License v3.0 or later, see LICENSE.
 
 This project is fully open source. You may use, copy, modify, merge,
-publish, distribute, sublicense, and sell copies under the MIT terms.
+publish, distribute, and sell copies under the AGPL-3.0-or-later terms,
+including the network-interaction source-offer rule (licence section 13):
+if you run a modified version on a server, its users get the source.
 You must keep the copyright and licence notices in all copies.
 
-Contributions are licensed under the same MIT terms (inbound = outbound).
-Every commit must carry a `Signed-off-by` line (Developer Certificate of
-Origin, https://developercertificate.org). By signing off you confirm you
-wrote the change or have the right to submit it under MIT.
+Contributions are licensed under the same AGPL-3.0-or-later terms
+(inbound = outbound). Every commit must carry a `Signed-off-by` line
+(Developer Certificate of Origin). By signing off you confirm you
+wrote the change or have the right to submit it under AGPL-3.0-or-later.
 
 Every new source file must start with an SPDX header, for example:
-`// SPDX-License-Identifier: MIT` (Rust/Dart/Kotlin) or
-`# SPDX-License-Identifier: MIT` (scripts/YAML where valid).
+`// SPDX-License-Identifier: AGPL-3.0-or-later` (Rust/Dart/Kotlin) or
+`# SPDX-License-Identifier: AGPL-3.0-or-later` (scripts/YAML where valid).
 
 Third-party code keeps its own licence. See THIRD_PARTY_LICENSES when
 present, plus Cargo.lock, pubspec.lock, and SBOM artifacts for the exact list.
-Patent note: MIT has no explicit patent grant (unlike Apache-2.0). This is
-an accepted simplicity tradeoff, documented here. Changing licences later
-needs every contributor's consent, so MIT is locked by this notice.
-No warranty.
+Patent grant: AGPL-3.0 section 11 gives every recipient a royalty-free
+licence to contributors' essential patent claims. Changing licences later
+needs every contributor's consent, so AGPL-3.0-or-later is locked by this
+notice. No warranty.

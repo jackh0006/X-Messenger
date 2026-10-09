@@ -2,8 +2,8 @@
 name = "x-messenger"
 version = "2.0.0"
 edition = "2021"
-description = "CIA-Grade Offline Messenger - Linux Desktop Application"
-license = "MIT OR Apache-2.0"
+description = "X Messenger legacy Linux draft (not the release path - see README.md)"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/jackh0006/X-Messenger"
 categories = ["command-line-utilities", "cryptography", "network-programming"]
 keywords = ["messenger", "offline", "encryption", "post-quantum", "qr-code"]

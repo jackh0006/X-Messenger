@@ -2,8 +2,8 @@
 name = "x-messenger-crypto"
 version = "2.0.0"
 edition = "2021"
-description = "CIA-Grade Offline Messenger Core Crypto: hybrid X25519+ML-KEM-768, XChaCha20-Poly1305, Argon2id, Ed25519+Dilithium3. No network."
-license = "MIT OR Apache-2.0"
+description = "X Messenger core crypto draft (QUARANTINED: unreviewed, custom impls - see docs/MASTER_SPEC_100.md). No network."
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/jackh0006/X-Messenger"
 
 [features]

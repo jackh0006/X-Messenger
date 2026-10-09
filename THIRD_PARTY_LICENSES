@@ -1,6 +1,6 @@
 X Messenger — third-party licence summary (seed file, expanded by CI SBOM)
 
-This project is MIT licensed (see LICENSE). Dependencies below keep their
+This project is AGPL-3.0-or-later licensed (see LICENSE). Dependencies below keep their
 own licences. Exact versions are pinned in Cargo.lock and app/pubspec.lock;
 full SBOMs are attached to release workflows.
 

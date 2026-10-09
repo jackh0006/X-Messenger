@@ -1,6 +1,6 @@
 # X Messenger
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Strict boundary](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-security.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-security.yml)
 [![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml)
 [![Preview release](https://img.shields.io/github/v/release/jackh0006/X-Messenger?include_prereleases&label=preview)](https://github.com/jackh0006/X-Messenger/releases)
@@ -10,7 +10,7 @@
 **Offline-first secret courier.** Move small, high-value secrets between trusted
 people with no accounts, no servers, and no internet — over QR codes, NFC, or
 one encrypted file you carry yourself. One shared Flutter UI on Android and
-Ubuntu, one Rust security core, MIT licensed, fully open source.
+Ubuntu, one Rust security core, AGPL-3.0 licensed, fully open source.
 
 > **Status: EXPERIMENTAL PREVIEW.** The shared UI shell builds and installs on
 > both platforms, but there is deliberately **no usable vault, pairing, or
@@ -52,7 +52,7 @@ preview.
 | Default chats E2E encrypted | Yes (Signal protocol) | **No** (cloud chats; optional Secret Chats) | Yes (Signal protocol) | Planned AEAD sessions |
 | Custom crypto protocol | No (published Signal protocol) | Yes (custom MTProto) | No (Signal protocol) | **No — reviewed primitives only** (rule R2) |
 | Operator must be trusted with metadata | Yes | Yes | Yes (Meta) | **No operator exists** |
-| Fully open source client + server need | Client open; server centralized | Clients open; server proprietary | Proprietary | **MIT, reproducible builds planned** |
+| Fully open source client + server need | Client open; server centralized | Clients open; server proprietary | Proprietary | **AGPL-3.0, reproducible builds planned** |
 | Contact discovery without uploading address book | Usernames (no bulk upload needed) | Address-book upload standard | Address-book upload standard | **Face-to-face pairing, nothing uploaded** |
 
 What X Messenger does that the others structurally cannot: operate where there
@@ -107,7 +107,7 @@ flutter analyze
 flutter test
 ```
 
-Contributions welcome under [CONTRIBUTING.md](CONTRIBUTING.md) (MIT terms).
+Contributions welcome under [CONTRIBUTING.md](CONTRIBUTING.md) (AGPL-3.0 terms).
 Report vulnerabilities privately per [SECURITY.md](SECURITY.md) — never post
 real phrases, keys, or message contents anywhere.
 

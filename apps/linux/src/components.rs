@@ -446,7 +446,7 @@ impl Component for SettingsComponent {
 
                     adw::ActionRow {
                         set_title: "License",
-                        set_subtitle: Some("MIT OR Apache-2.0"),
+                        set_subtitle: Some("AGPL-3.0-or-later"),
                     },
 
                     adw::ActionRow {
