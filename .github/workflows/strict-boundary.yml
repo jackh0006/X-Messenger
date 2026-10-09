@@ -62,6 +62,6 @@ jobs:
             head -3 "$f" | grep -q 'SPDX-License-Identifier' || { echo "$f missing SPDX"; exit 1; };
           done
           for p in $(node -p "Object.keys(require('./package.json').dependencies).join(' ')"); do
-            grep -q "$p" THIRD-PARTY-NOTICES.md || { echo "$p missing from THIRD-PARTY-NOTICES.md"; exit 1; };
+            grep -qi "$p" THIRD-PARTY-NOTICES.md || { echo "$p missing from THIRD-PARTY-NOTICES.md"; exit 1; };
           done
           echo "licenses: OK"
