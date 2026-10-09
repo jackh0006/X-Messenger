@@ -121,7 +121,7 @@ function updateSelectBar() {
   } catch {}
 }
 function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
-function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else closeDrawer(); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], 'send-nfc': ['📳', 'Send via NFC', 'Seal here, tap there — short envelopes'], 'send-ble': ['🔵', 'Send via Bluetooth', 'Seal here, send to a nearby X Messenger'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else if (view === 'send-nfc') { buildSendSheet('nfc'); openModal('#sendNfcDialog'); } else if (view === 'send-ble') { buildSendSheet('ble'); openModal('#sendBleDialog'); } else closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
@@ -149,6 +149,58 @@ $('#openReceive').onclick = () => openModal('#receiveDialog');
 $('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
 $('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
+// Dedicated NFC / Bluetooth send sheets (1.0.8) — same sealing as QR,
+// transport-targeted sending, full risk notes, honest availability.
+function buildSendSheet(kind) {
+  const isNfc = kind === 'nfc';
+  const id = isNfc ? 'sendNfcDialog' : 'sendBleDialog';
+  if (document.getElementById(id)) return document.getElementById(id);
+  const d = document.createElement('dialog'); d.className = 'modal'; d.id = id;
+  const title = isNfc ? 'Send via NFC' : 'Send via Bluetooth';
+  const kicker = isNfc ? 'TAP PHONES & TAGS' : 'NEARBY ENCRYPTED TRANSFER';
+  const avail = isNfc
+    ? (nfcAvailable() ? '' : '<p class="subtle">NFC is not available here — it needs the Android app (native radio). Sealing still works; transfer needs the app.</p>')
+    : (bleAvailable() ? '' : '<p class="subtle">Bluetooth is not available here — it needs Chrome with Bluetooth, or the Android app. Sealing still works; transfer needs one of those.</p>');
+  const risk = isNfc
+    ? 'NFC reads at centimetres but relays exist. Tags under ~880 bytes only (NTAG216). Proximity proves nothing — phrase travels separately, in person.'
+    : 'Anyone nearby can record radio. XM1 encryption is the only protection — never send the phrase over Bluetooth. Turn radio off when done.';
+  d.innerHTML = `<button class="modal-close" data-send-close>×</button><div class="modal-content"><div class="modal-kicker">${kicker}</div><h2>${title}</h2><p>Write, seal with a shared phrase, then send over ${isNfc ? 'NFC' : 'Bluetooth'}. The message joins this session like any other.</p>${avail}<label>Message<textarea id="${kind}Msg" rows="3" maxlength="900" placeholder="Write a private message…"></textarea></label><label>Shared phrase<input id="${kind}Phrase" type="password" autocomplete="new-password" placeholder="four uncommon private words"></label><label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input id="${kind}High" type="checkbox" style="width:auto;margin-top:2px"> <span>High-value: require 20+ characters</span></label><label style="display:flex;gap:8px;align-items:flex-start;font-weight:400"><input id="${kind}Once" type="checkbox" style="width:auto;margin-top:2px"> <span>View once: auto-delete from session after 30s</span></label><button class="primary-large" id="${kind}Go">Seal & send via ${isNfc ? 'NFC' : 'Bluetooth'} <span>→</span></button><p id="${kind}Status" class="receive-status"></p><p class="subtle">${risk}</p></div>`;
+  document.body.append(d);
+  d.querySelector('[data-send-close]').onclick = () => d.close();
+  d.querySelector(`#${kind}Go`).onclick = () => sealAndTransport(kind);
+  return d;
+}
+async function sealAndTransport(kind) {
+  const isNfc = kind === 'nfc';
+  const msg = $(`#${kind}Msg`), phraseEl = $(`#${kind}Phrase`), status = $(`#${kind}Status`);
+  const text = (msg.value || '').trim();
+  let phrase = phraseEl.value || '';
+  const fail = m => { status.textContent = m; };
+  if (!text) return fail('Write a message first.');
+  if (!phrase) return fail('A shared phrase is required.');
+  if ($(`#${kind}High`).checked && phrase.length < 20) return fail('High-value mode: use 20+ characters, one time only.');
+  const once = $(`#${kind}Once`).checked;
+  const btn = $(`#${kind}Go`); btn.disabled = true;
+  try {
+    const payload = await encryptText(text, phrase);
+    phrase = ''; phraseEl.value = '';
+    addMessage(text, 'outgoing', { sealed: payload, via: kind, viewOnce: once });
+    currentPayload = payload; currentVia = kind;
+    msg.value = '';
+    if (isNfc) {
+      await nfcWrite(payload);
+      fail('Sent via NFC. The phrase still travels separately, in person.');
+    } else {
+      let queued = false;
+      await bleSend(payload, (i, n) => {
+        if (i === 0) { queued = true; status.textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
+        else status.textContent = `Bluetooth: frame ${i}/${n}`;
+      });
+      fail(queued ? 'Queued via Bluetooth — delivers when a peer connects. Phrase still travels separately.' : 'Sent via Bluetooth. Phrase still travels separately, in person.');
+    }
+  } catch (e) { fail(`${isNfc ? 'NFC' : 'Bluetooth'} failed: ${(e && e.message) || e}`); }
+  finally { btn.disabled = false; phraseEl.value = ''; }
+}
 // NFC / Bluetooth send buttons (1.0.8). ALWAYS rendered — never a mystery.
 // When the platform cannot do it, the button stays visible but disabled
 // with the exact reason. No silent hiding, ever.

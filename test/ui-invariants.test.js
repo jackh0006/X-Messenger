@@ -9,7 +9,7 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 test('every #id referenced in app.js exists in index.html or is created dynamically', () => {
   const html = read('index.html');
   const js = read('app.js');
-  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'highValue', 'viewOnce', 'menuBtn', 'scrim', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo', 'chatBar', 'chatSearch', 'selCount', 'toggleSelect', 'delSelected', 'expSelected', 'cancelSelect', 'clearChat', 'chatStatus', 'nfcSend', 'bleSend', 'nfcReceive', 'bleReceive', 'bleAdvertise', 'bleSelfTest', 'radioStatus']);
+  const created = new Set(['profileDialog', 'settingsDialog', 'recipientList', 'profileName', 'profileNote', 'saveProfile', 'themeSetting', 'fontSetting', 'fontValue', 'exportData', 'restoreData', 'deleteData', 'restoreFile', 'settingsStatus', 'openSecurityGuide', 'phraseStrength', 'msgCount', 'highValue', 'viewOnce', 'menuBtn', 'scrim', 'connStatus', 'portSetting', 'domainSetting', 'lanConsent', 'applyPort', 'enableLan', 'enableVps', 'backLoopback', 'tlsStatus', 'copyTlsFp', 'regenCertInfo', 'chatBar', 'chatSearch', 'selCount', 'toggleSelect', 'delSelected', 'expSelected', 'cancelSelect', 'clearChat', 'chatStatus', 'nfcSend', 'bleSend', 'nfcReceive', 'bleReceive', 'bleAdvertise', 'bleSelfTest', 'radioStatus', 'sendNfcDialog', 'sendBleDialog', 'nfcMsg', 'nfcPhrase', 'nfcHigh', 'nfcOnce', 'nfcGo', 'nfcStatus', 'bleMsg', 'blePhrase', 'bleHigh', 'bleOnce', 'bleGo', 'bleStatus']);
   const ids = new Set([...js.matchAll(/\$\('#([A-Za-z]+)'\)/g)].map((m) => m[1]));
   for (const id of ids) {
     if (created.has(id)) continue;
@@ -40,7 +40,7 @@ test("hamburger-only mobile nav with one shared handler (no bottom bar)", () => 
   assert.ok(!html.includes("mobileTabs"), "bottom bar must be gone");
   assert.ok(!css.includes("#mobileTabs"), "bottom bar css must be gone");
   assert.ok(html.includes('id="menuBtn"'), "hamburger missing");
-  for (const v of ["saved", "receive", "settings"]) {
+  for (const v of ["saved", "receive", "send-nfc", "send-ble", "settings"]) {
     assert.ok(html.includes(`data-view="${v}"`), v + " missing");
   }
   assert.ok(js.includes("function startChat"), "unified startChat missing");

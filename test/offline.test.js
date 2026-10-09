@@ -135,3 +135,12 @@ test('radio buttons always render with honest disabled reasons', () => {
   assert.ok(!/if\s*\(\s*bleAvailable\(\)\)\s*\{/.test(js), 'BLE buttons must not hide silently');
   assert.ok(js.includes('Self-test PASS'), 'framing self-test must report honestly');
 });
+
+test('sidebar send sheets seal and target NFC/Bluetooth', () => {
+  const js = read('app.js');
+  assert.ok(js.includes('buildSendSheet') && js.includes('sealAndTransport'), 'sheets must share one sealing flow');
+  assert.ok(js.includes("send-nfc") && js.includes("send-ble"), 'views must include both radio sheets');
+  assert.ok(js.includes('sendNfcDialog') && js.includes('sendBleDialog'), 'both sheets must exist');
+  assert.ok(js.includes('Proximity proves nothing') || js.includes('proves nothing'), 'NFC sheet must deny proximity trust');
+  assert.ok(js.includes('Turn radio off when done') || js.includes('radio off'), 'BLE sheet must tell users to switch radio off');
+});
