@@ -182,6 +182,8 @@ async function sealAndTransport(kind) {
   const once = $(`#${kind}Once`).checked;
   const btn = $(`#${kind}Go`); btn.disabled = true;
   try {
+    if (isNfc && !nfcAvailable()) { status.textContent = 'NFC is not available here — it needs the Android app (native radio). Message kept in session, nothing sent.'; return; }
+    if (!isNfc && !bleAvailable()) { status.textContent = 'Bluetooth is not available here — it needs Chrome with Bluetooth, or the Android app. Message kept in session, nothing sent.'; return; }
     const payload = await encryptText(text, phrase);
     phrase = ''; phraseEl.value = '';
     addMessage(text, 'outgoing', { sealed: payload, via: kind, viewOnce: once });
@@ -195,7 +197,7 @@ async function sealAndTransport(kind) {
       await bleSend(payload, (i, n) => {
         if (i === 0) { queued = true; status.textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
         else status.textContent = `Bluetooth: frame ${i}/${n}`;
-      });
+      }, v => { status.textContent = v; });
       fail(queued ? 'Queued via Bluetooth — delivers when a peer connects. Phrase still travels separately.' : 'Sent via Bluetooth. Phrase still travels separately, in person.');
     }
   } catch (e) { fail(`${isNfc ? 'NFC' : 'Bluetooth'} failed: ${(e && e.message) || e}`); }
@@ -226,7 +228,7 @@ try {
         await bleSend(currentPayload, (i, n) => {
           if (i === 0) { queued = true; $('#payloadSize').textContent = `Bluetooth: ${n} frames queued — waiting for a central to connect`; }
           else $('#payloadSize').textContent = `Bluetooth: frame ${i}/${n}`;
-        });
+        }, v => { $('#payloadSize').textContent = v; });
         currentVia = 'ble';
         $('#payloadSize').textContent += queued ? ' (delivers when a peer connects; phrase still required separately)' : ' — sent via Bluetooth (phrase still required separately)';
       }
@@ -315,6 +317,26 @@ try {
       finally { stB.disabled = false; }
     };
     box.append(stB);
+    // Dongle doctor: everything the browser can report, plus exact terminal
+    // checks for Ubuntu (dongles, BlueZ, adapter power).
+    const docB = document.createElement('button'); docB.id = 'radioDoctor'; docB.textContent = 'Check Bluetooth setup';
+    docB.onclick = async () => {
+      const lines = [];
+      lines.push(`Browser API: ${navigator.bluetooth ? 'present ✓' : 'MISSING — use Chrome/Edge with Bluetooth, or the Android app'}`);
+      if (navigator.bluetooth) {
+        try { lines.push(`Adapter: ${await navigator.bluetooth.getAvailability() ? 'ON ✓' : 'OFF — enable Bluetooth on this machine'}`); }
+        catch { lines.push('Adapter: unknown (browser refused to say)'); }
+      }
+      lines.push('Native bridge: ' + (blePlugin() ? 'present ✓ (Advertise available)' : 'absent (advertising needs the Android app)'));
+      lines.push('Dongle/BlueZ (run in Ubuntu terminal):');
+      lines.push('  lsusb | grep -Ei "bluetooth|0bda|0a12|2357|0cf3|8087"  — your adapter must list');
+      lines.push('  rfkill list bluetooth  — must say neither soft nor hard blocked');
+      lines.push('  systemctl is-active bluetooth  — must say active');
+      lines.push('  bluetoothctl show  — Powered: yes; pair/trust phone if asked');
+      lines.push('If all pass but the browser still lacks the API, restart Chrome (not just the window) and retry.');
+      $('#receiveStatus').textContent = lines.join(' ');
+    };
+    box.append(docB);
   }
 } catch {}
 const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join(' '); $('#fingerprint').textContent = id.toUpperCase(); $('#deviceId').textContent = `ID ${id.slice(0, 9).toUpperCase()}`; $('#copyFingerprint').onclick = async () => { try { await navigator.clipboard.writeText(id.toUpperCase()); clearClipboardLater(); } catch {} };
@@ -382,8 +404,8 @@ const XMSG_TX = '9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6d';
 const XMSG_RX = '9b7c2f4a-3e1d-4a5f-8c6b-1d2e3f4a5b6e';
 const nfcPlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NfcPlugin) || null;
 const blePlugin = () => (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BlePlugin) || null;
-function nfcAvailable() { return !!nfcPlugin() || ('NDEFReader' in window); }
-function bleAvailable() { return !!blePlugin() || ('bluetooth' in navigator); }
+function nfcAvailable() { try { return !!nfcPlugin() || (typeof NDEFReader !== 'undefined'); } catch { return !!nfcPlugin(); } }
+function bleAvailable() { try { return !!blePlugin() || !!navigator.bluetooth; } catch { return !!blePlugin(); } }
 async function nfcWrite(payload) {
   const sealed = nfcWrap(payload);
   const p = nfcPlugin();
@@ -413,11 +435,49 @@ function nfcReadOnce(onPayload) {
   r.scan().catch(() => { $('#receiveStatus').textContent = 'NFC unavailable or denied. Use QR or paste instead.'; });
 }
 async function bleConnect() {
+  if (!navigator.bluetooth) throw new Error('Bluetooth API is not available in this browser. Use Chrome with Bluetooth, or the Android app.');
   const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [XMSG_SVC] }], optionalServices: [XMSG_SVC] });
   const server = await device.gatt.connect();
   return { device, server, svc: await server.getPrimaryService(XMSG_SVC) };
 }
-async function bleSend(payload, onProgress) {
+// Device verdict (1.0.8): name + model info + supported/not, shown on click.
+async function bleInspect(device, server, svc) {
+  const name = device.name || 'unnamed device';
+  const info = [];
+  try {
+    const dis = await server.getPrimaryService('device_information').catch(() => null);
+    if (dis) {
+      for (const [uuid, label] of [['manufacturer_name_string', 'maker'], ['model_number_string', 'model'], ['serial_number_string', 'serial']]) {
+        try {
+          const c = await dis.getCharacteristic(uuid);
+          const v = await c.readValue();
+          const s = new TextDecoder().decode(v).replace(/[^\x20-\x7E]/g, '').slice(0, 40);
+          if (s) info.push(`${label}: ${s}`);
+        } catch {}
+      }
+    }
+  } catch {}
+  let txOk = false, rxOk = false;
+  try { const tx = await svc.getCharacteristic(XMSG_TX); txOk = !!(tx.properties.notify || tx.properties.read); } catch {}
+  try { const rx = await svc.getCharacteristic(XMSG_RX); rxOk = !!(rx.properties.write || rx.properties.writeWithoutResponse); } catch {}
+  const supported = txOk && rxOk;
+  return `Device: ${name}${info.length ? ' · ' + info.join(' · ') : ''} — ${supported ? 'SUPPORTED: X Messenger service with TX/RX ✓' : 'NOT SUPPORTED: missing X Messenger TX/RX characteristics'}`;
+}
+function refreshRadio() {
+  try {
+    const el = $('#radioStatus');
+    if (!el) return;
+    const nfcState = nfcAvailable() ? 'ready here' : 'needs Android app';
+    let bleState;
+    if (blePlugin()) bleState = 'native bridge present';
+    else if (navigator.bluetooth) {
+      bleState = 'ready here';
+      navigator.bluetooth.getAvailability().then(on => { try { $('#radioStatus').textContent = `NFC: ${nfcAvailable() ? 'ready here' : 'needs Android app'} · Bluetooth: adapter ${on ? 'ON' : 'OFF — enable Bluetooth on this machine'}`; } catch {} }).catch(() => {});
+    } else bleState = 'not in this browser — Chrome with Bluetooth, or the Android app';
+    el.textContent = `NFC: ${nfcState} · Bluetooth: ${bleState}`;
+  } catch {}
+}
+async function bleSend(payload, onProgress, onVerdict) {
   const frames = bleEncode(payload);
   const p = blePlugin();
   if (p) {
@@ -427,7 +487,8 @@ async function bleSend(payload, onProgress) {
     else onProgress(frames.length, frames.length);
     return;
   }
-  const { device, svc } = await bleConnect();
+  const { device, server, svc } = await bleConnect();
+  if (onVerdict) { try { onVerdict(await bleInspect(device, server, svc)); } catch {} }
   try {
     const rx = await svc.getCharacteristic(XMSG_RX);
     const enc = new TextEncoder();
@@ -458,6 +519,7 @@ function bleListen(onPayload, onProgress) {
     return () => { alive = false; clearTimeout(deadline); };
   }
   let stopped = false, got = [];
+  if (!navigator.bluetooth) { $('#receiveStatus').textContent = 'Bluetooth is not available here. Use QR or paste.'; return () => {}; }
   navigator.bluetooth.requestDevice({ filters: [{ services: [XMSG_SVC] }], optionalServices: [XMSG_SVC] })
     .then(d => d.gatt.connect().then(async server => {
       const svc = await server.getPrimaryService(XMSG_SVC);
@@ -565,4 +627,4 @@ $('#applyPort').onclick = () => { const p = Number($('#portSetting').value); if 
 $('#enableLan').onclick = () => { if (!$('#lanConsent').checked) { $('#settingsStatus').textContent = 'Tick consent first: LAN TLS is encrypted but observable (IP/port/sizes).'; return; } const p = Number($('#portSetting').value) || 8443; $('#settingsStatus').textContent = `To share on LAN: quit GUI and run: x-messenger gui --lan --port ${p}. Others on your network will see encrypted connections — compare cert fingerprint in person.`; };
 $('#enableVps').onclick = () => { const d = ($('#domainSetting').value || '').trim().toLowerCase(); if (!$('#lanConsent').checked) { $('#settingsStatus').textContent = 'Tick consent first: VPS TLS is normal HTTPS but provider/DNS see domain+IP+sizes.'; return; } if (!validDomainUi(d)) { $('#settingsStatus').textContent = 'Enter your public domain first, e.g. msg.example.com (needs DNS + Let’s Encrypt; see docs/vps-domain-cloudflare.md).'; return; } const p = Number($('#portSetting').value) || 443; $('#settingsStatus').textContent = `To serve your domain: quit GUI and run: x-messenger gui --vps --domain ${d} --port ${p}. Keep Cloudflare grey-cloud (DNS-only) for end-to-end (content stays XM1).`; };
 $('#backLoopback').onclick = () => { $('#settingsStatus').textContent = 'To return to safest offline mode: quit GUI and run: x-messenger gui --loopback --port 8443.'; };
-document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'settings') setTimeout(refreshConn, 50); }));
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'settings') setTimeout(refreshConn, 50); if (b.dataset.view === 'receive') setTimeout(refreshRadio, 50); }));

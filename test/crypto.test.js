@@ -84,8 +84,12 @@ test('BLE frames reject tampering, truncation, and mixing', async () => {
   const frames = bleEncode(sealed);
   const bad = frames.slice(1);
   if (bad.length) await assert.rejects(async () => bleDecode(bad), /Incomplete/);
-  const flip = frames[0].slice(0, -1) + (frames[0].slice(-1) === 'A' ? 'B' : 'A');
-  assert.throws(() => bleDecode([flip, ...frames.slice(1)]));
+  // Flip a middle character: the last base64 char holds padding bits, so a
+  // flip there can decode identically. Middle flips always alter data.
+  const mid = 20;
+  const mc = frames[0][mid] === 'A' ? 'B' : 'A';
+  const flip = frames[0].slice(0, mid) + mc + frames[0].slice(mid + 1);
+  assert.throws(() => bleDecode([flip, ...frames.slice(1)]), /integrity|Unsupported/);
   assert.throws(() => bleDecode(['HELLO']));
   assert.throws(() => bleEncode('not-an-envelope'));
   const other = bleEncode(await encryptText('other', 'correct horse battery staple words'));

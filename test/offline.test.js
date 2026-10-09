@@ -144,3 +144,17 @@ test('sidebar send sheets seal and target NFC/Bluetooth', () => {
   assert.ok(js.includes('Proximity proves nothing') || js.includes('proves nothing'), 'NFC sheet must deny proximity trust');
   assert.ok(js.includes('Turn radio off when done') || js.includes('radio off'), 'BLE sheet must tell users to switch radio off');
 });
+
+test('radio guards never throw TypeErrors, verdicts exist', () => {
+  const js = read('app.js');
+  assert.ok(js.includes('!!navigator.bluetooth'), 'detection must check the API value, not mere presence');
+  assert.ok(js.includes('typeof NDEFReader'), 'NFC detection must be exception-safe');
+  assert.ok(js.includes('radioDoctor') && js.includes('bluetoothctl show'), 'dongle doctor must name terminal checks');
+  assert.ok(js.includes('bleInspect') && js.includes('manufacturer_name_string'), 'device verdict must read model info');
+  assert.ok(js.includes('refreshRadio'), 'radio status must refresh live');
+  // Every requestDevice call site must be guarded: bleConnect and the web
+  // branch of bleListen both check navigator.bluetooth first.
+  assert.ok(/async function bleConnect\(\)[\s\S]{0,400}if \(!navigator\.bluetooth\)[\s\S]{0,400}requestDevice/.test(js), 'bleConnect must guard requestDevice');
+  const listenBody = js.slice(js.indexOf('function bleListen'));
+  assert.ok(/if \(!navigator\.bluetooth\)[\s\S]{0,200}requestDevice/.test(listenBody), 'bleListen web path must guard requestDevice');
+});
