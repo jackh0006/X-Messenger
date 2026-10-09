@@ -61,3 +61,11 @@ test('rejects wrong payload types', async () => {
   await assert.rejects(encryptText(123, 'phrase'));
   await assert.rejects(decryptText(null, 'phrase'));
 });
+
+test('duplicate delivery decrypts identically and truncation is rejected', async () => {
+  const sealed = await encryptText('replayable delivery', 'duplicate delivery phrase words');
+  assert.equal(await decryptText(sealed, 'duplicate delivery phrase words'), 'replayable delivery');
+  assert.equal(await decryptText(sealed, 'duplicate delivery phrase words'), 'replayable delivery');
+  await assert.rejects(decryptText(sealed.slice(0, Math.floor(sealed.length / 2)), 'duplicate delivery phrase words'));
+  await assert.rejects(decryptText(sealed + 'A', 'duplicate delivery phrase words'));
+});

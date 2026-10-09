@@ -1,4 +1,4 @@
-# Third-party notices (v1.0.2)
+# Third-party notices (v1.0.7)
 
 X Messenger bundles/depends on the following open-source packages.
 Their licenses apply to their own files.

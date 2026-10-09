@@ -1,7 +1,7 @@
-# X Messenger v1.0.2 — No signal? No account? Send it anyway.
+# X Messenger v1.0.7 — No signal? No account? Send it anyway.
 
 [![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
-![Version](https://img.shields.io/badge/version-1.0.2-blue)
+![Version](https://img.shields.io/badge/version-1.0.7-blue)
 ![Android](https://img.shields.io/badge/Android-targetSdk%2037-green)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 ![Offline](https://img.shields.io/badge/offline-first-orange)
@@ -19,7 +19,7 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 - [Why it is different](#why-its-different-to-any-messenger)
 - [What people need it for](#what-people-need-it-for)
 - [30-second demo](#30-second-demo-like-teaching-a-5-year-old)
-- [Features (v1.0.2, all platforms same)](#features-v102-all-platforms-same)
+- [Features (v1.0.7, all platforms same)](#features-v102-all-platforms-same)
 - [Use it](#use-it)
 - [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
 - [Android (stays offline)](#android-stays-offline)
@@ -33,7 +33,7 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 Same task, same method, reproducible (method + proof under the table).
 Legend: ✓ yes · ✗ no · ◐ partial.
 
-| Need (your words) | X v1.0.2 | WhatsApp | Telegram | SMS | How we prove it |
+| Need (your words) | X v1.0.7 | WhatsApp | Telegram | SMS | How we prove it |
 | --- | :---: | :---: | :---: | :---: | --- |
 | ✈ Send with **zero bars** | ✓ | ✗ | ✗ | ◐ no lock | Airplane-mode QR seal → scan → decrypt, `npm test` |
 | ◌ **No SIM / number / email** | ✓ | ✗ | ✗ | ✗ | Signup screens need numbers; X has no account field |
@@ -74,7 +74,7 @@ The Linux GUI opens on `https://127.0.0.1:8443` (this device only, zero
 egress). To change port/domain/mode: `x-messenger setup` or
 Settings → Connection.
 
-CLI (`cipherlink version` → `1.0.2`):
+CLI (`cipherlink version` → `1.0.7`):
 
 ```bash
 cipherlink encrypt "Meet at the north gate"
@@ -89,7 +89,7 @@ x-messenger gui --vps --domain msg.example.com --port 443
 The phrase is always asked **hidden** (never in shell history unless you
 force `--phrase` for scripts).
 
-## Features (v1.0.2, all platforms same)
+## Features (v1.0.7, all platforms same)
 
 - Same `www/` bundle on Linux + Android (`cap sync` verified): themes
   (system/light/dark, fully fixed contrast), text size 14–20px that really
@@ -124,16 +124,20 @@ force `--phrase` for scripts).
 
 Settings, local users, fingerprint, QR scan — everything works with zero
 bars. Rebuild: `npm run android:sync && npm run android:apk` (debug only).
-Play upload is a signed `.aab` (`versionCode 3 / versionName 1.0.2`,
+Play upload is a signed `.aab` (`versionCode 8 / versionName 1.0.7`,
 `targetSdk 37`). Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
 and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-policy.md](docs/privacy-policy.md).
 
-## Security design (v1.0.2)
+## Security design (v1.0.7)
 
 - `AES-256-GCM` via Web Crypto, `PBKDF2-HMAC-SHA256` 600,000 iterations,
-  fresh 128-bit salt + 96-bit nonce per message, versioned `XM1` + `XMessenger/1`
-  context, strict parsing, 8000-char cap (UI 900 for QR + counter, `>2900B`
+  fresh 128-bit salt + 96-bit nonce per message, versioned `XM1` (v2 seals
+  with padded size buckets, v1 reads) + `XMessenger/2` context, strict
+  parsing, 8000-char cap (UI 900 for QR + counter, `>2900B`
   suggests `.xmsg`).
+- Loopback HTTPS via a device-local CA (`gui --trust-ca` once,
+  `gui --cert-info` to compare fingerprints); separate `--app` window,
+  `FLAG_SECURE` on Android, phrase fields wiped when hidden.
 - No forward secrecy, no identity proof, no endpoint-malware defense, no
   secure deletion beyond 1-pass overwrite. Any non-empty phrase allowed;
   long unique one-time phrases only. Names/notes are unverified labels.
@@ -146,6 +150,7 @@ Read [SECURITY.md](SECURITY.md) before high-risk use.
 
 | File | What it teaches (5yo-simple where it matters) |
 | --- | --- |
+| `docs/GATEWAY.md` | Offline core vs optional gateway: loopback default, LAN IP / VPS domain / VPS IP with custom ports |
 | `docs/vps-domain-cloudflare.md` | House address: VPS + Cloudflare DNS + subdomain + Let’s Encrypt |
 | `docs/vps-private-mode.md` | Bedtime-story privacy: who sees what + daily safety rules |
 | `docs/privacy-policy.md` | Collects nothing; camera frames never leave device |
@@ -174,8 +179,8 @@ or message contents).
 
 ## Versions
 
-`package.json 1.0.2` · `core.js 1.0.2` · Android `versionCode 3 / versionName 1.0.2`
-· Debian `1.0.2` · CLI `1.0.2` · GUI `v1.0.2`. Verify downloads with `SHA256SUMS`.
+`package.json 1.0.7` · `core.js 1.0.7` · Android `versionCode 8 / versionName 1.0.7`
+· Debian `1.0.7` · CLI `1.0.7` · GUI `v1.0.7`. Verify downloads with `SHA256SUMS`.
 
 ## Legal
 

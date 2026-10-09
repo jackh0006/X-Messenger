@@ -63,6 +63,14 @@ test('lan mode is opt-in and honestly warned', () => {
   assert.ok(!/invisible to DPI|impossible to hack|CIA-grade/i.test(cli + srv + js), 'must not claim invisibility');
 });
 
+test('offline is the default; gateway needs explicit opt-in', () => {
+  const cli = read('bin/cipherlink');
+  const srv = read('server.js');
+  assert.ok(srv.includes("prefs.bind || 'loopback'") || srv.includes("|| 'loopback'"), 'server default bind must be loopback');
+  assert.ok(srv.includes("127.0.0.1"), 'loopback address must be 127.0.0.1');
+  assert.ok(cli.includes('--loopback'), 'CLI must offer explicit loopback');
+  assert.ok(!/--lan|--vps/.test(cli.match(/Starting with safe defaults[^`]*/)?.[0] || ''), 'safe defaults must not include lan/vps');
+});
 test('local CA fixes browser warning without insecure flags', () => {
   const cli = read('bin/cipherlink');
   assert.ok(cli.includes('local-ca-cert.pem'), 'CLI must manage a device-local CA');

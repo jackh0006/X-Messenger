@@ -1,4 +1,4 @@
-# Security policy and threat model (v1.0.2)
+# Security policy and threat model (v1.0.7)
 
 Report suspected vulnerabilities privately to **jackh109867@gmail.com** with version, impact, and reproduction steps. Do not send private keys, real message contents, recovery phrases, or tokens. Do not open public issues for vulns.
 
@@ -6,7 +6,7 @@ Report suspected vulnerabilities privately to **jackh109867@gmail.com** with ver
 
 | Version | Supported |
 | --- | --- |
-| 1.0.2 | Yes (current) |
+| 1.0.7 | Yes (current) |
 | older | No — please upgrade and re-test |
 
 ## Protected
