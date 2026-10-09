@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: X Messenger
+message: >-
+  If you use this software, please cite it as below. Note: this is an
+  experimental preview, not an audited secure messenger.
+type: software
+authors:
+  - name: jackh0006
+    email: jackh109867@gmail.com
+repository-code: "https://github.com/jackh0006/X-Messenger"
+license: MIT
+version: 1.0.0-preview.1
