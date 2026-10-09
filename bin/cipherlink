@@ -18,7 +18,7 @@ const help = () => console.log(`X Messenger ${APP_VERSION} — offline encrypted
 Seal on this device, hand over QR/text/.xmsg. No signal, no account, no server.
 
 Use:
-  cipherlink gui [--port 443] [--loopback|--lan|--vps --domain msg.example.com] [--regen-cert] [--cert-info]
+  cipherlink gui [--port 443] [--loopback|--lan|--vps --domain msg.example.com] [--regen-cert] [--cert-info] [--trust-ca] [--untrust-ca]
   cipherlink setup [--yes]   (first-run wizard: port + mode + domain guide)
   cipherlink encrypt "your private message" --to "recipient name"
   cipherlink decrypt "XM1.…"
@@ -37,6 +37,10 @@ If 443 is taken or needs privilege, you will be asked to choose another port.
 cert (normal HTTPS; provider/DNS still see domain+IP+sizes, content stays XM1).
 See docs/vps-domain-cloudflare.md + docs/vps-private-mode.md. Port 1024-65535
 (443 needs capability: sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))).
+Browser warning: first run shows a cert warning because the loopback cert is
+signed by your device-local CA. Compare fingerprints, then run once:
+  x-messenger gui --trust-ca     (trusts local CA in NSS + system store)
+  x-messenger gui --cert-info    (shows CA + leaf fingerprints)
 
 The shared phrase is requested privately. --phrase is for non-interactive
 automation only; it can be visible in shell history and process lists.
@@ -148,10 +152,85 @@ function writeGuiPrefs(p) {
   fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
   fs.writeFileSync(f, JSON.stringify(p, null, 2), { mode: 0o600 });
 }
+function caPaths(dataDir) {
+  return { caKey: path.join(dataDir, 'local-ca-key.pem'), caCert: path.join(dataDir, 'local-ca-cert.pem') };
+}
+function makeCa(caKey, caCert) {
+  // Device-local CA. Private key never leaves this device (0600).
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:3072', '-sha384', '-nodes', '-keyout', caKey, '-out', caCert, '-days', '3650', '-subj', '/CN=X Messenger Local CA', '-addext', 'basicConstraints=critical,CA:true', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], { stdio: 'ignore' });
+  fs.chmodSync(caKey, 0o600); fs.chmodSync(caCert, 0o600);
+}
+function makeLeaf(key, cert, caKey, caCert, sanIp) {
+  const san = sanIp && sanIp !== '127.0.0.1' ? `DNS:localhost,IP:127.0.0.1,IP:${sanIp}` : 'DNS:localhost,IP:127.0.0.1';
+  const tmp = fs.mkdtempSync(path.join(path.dirname(key), 'leaf-'));
+  try {
+    const csr = path.join(tmp, 'leaf.csr');
+    const ext = path.join(tmp, 'leaf.ext');
+    execFileSync('openssl', ['req', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', csr, '-subj', '/CN=localhost', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
+    fs.writeFileSync(ext, `basicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=${san}\n`);
+    execFileSync('openssl', ['x509', '-req', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-CAcreateserial', '-out', cert, '-days', '825', '-sha256', '-extfile', ext], { stdio: 'ignore' });
+    fs.chmodSync(key, 0o600); fs.chmodSync(cert, 0o600);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+function isSelfSigned(certPath) {
+  try {
+    const { X509Certificate } = require('node:crypto');
+    const c = new X509Certificate(fs.readFileSync(certPath));
+    return c.issuer === c.subject;
+  } catch { return false; }
+}
 function makeCert(key, cert, sanIp) {
+  // Legacy self-signed path (kept for reference only; openGui now uses CA-signed leaves).
   const san = sanIp && sanIp !== '127.0.0.1' ? `DNS:localhost,IP:127.0.0.1,IP:${sanIp}` : 'DNS:localhost,IP:127.0.0.1';
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', cert, '-days', '825', '-subj', '/CN=localhost', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
   fs.chmodSync(key, 0o600); fs.chmodSync(cert, 0o600);
+}
+function ensureCaLeaf(dataDir, sanIp, wantRegen) {
+  const { caKey, caCert } = caPaths(dataDir);
+  let caCreated = false;
+  if (wantRegen || !fs.existsSync(caKey) || !fs.existsSync(caCert)) {
+    makeCa(caKey, caCert);
+    caCreated = true;
+    const { X509Certificate } = require('node:crypto');
+    try {
+      const ca = new X509Certificate(fs.readFileSync(caCert));
+      console.log(`Local CA ${wantRegen ? 'regenerated' : 'created'}.\nCA SHA256 (compare before trusting): ${ca.fingerprint256}\nRun: x-messenger gui --trust-ca  (one-time, needs your sudo for system store)`);
+    } catch {}
+  }
+  const key = path.join(dataDir, 'localhost-key.pem');
+  const cert = path.join(dataDir, 'localhost-cert.pem');
+  if (wantRegen || !fs.existsSync(key) || !fs.existsSync(cert) || isSelfSigned(cert)) {
+    makeLeaf(key, cert, caKey, caCert, sanIp);
+    console.log(`TLS leaf ${wantRegen ? 'regenerated' : 'created'} signed by local CA (SAN includes ${sanIp && sanIp !== '127.0.0.1' ? sanIp : '127.0.0.1'}).`);
+  }
+  return { key, cert, caKey, caCert, caCreated };
+}
+function trustCa(dataDir) {
+  const { caCert } = caPaths(dataDir);
+  const { X509Certificate } = require('node:crypto');
+  if (!fs.existsSync(caCert)) { console.error('No local CA yet. Run: x-messenger gui (creates CA), then: x-messenger gui --trust-ca'); process.exitCode = 2; return; }
+  const ca = new X509Certificate(fs.readFileSync(caCert));
+  console.log(`Local CA: ${caCert}\nSHA256: ${ca.fingerprint256}\nValid: ${ca.validFrom} → ${ca.validTo}\nCompare this fingerprint with the one shown in the app TLS screen before trusting.`);
+  const nssDb = path.join(process.env.HOME || '.', '.pki', 'nssdb');
+  try {
+    fs.mkdirSync(nssDb, { recursive: true, mode: 0o700 });
+    execFileSync('certutil', ['-d', `sql:${nssDb}`, '-A', '-t', 'C,,', '-n', 'X Messenger Local CA', '-i', caCert], { stdio: 'ignore' });
+    console.log('Trusted in Chrome/Firefox NSS store ( ~/.pki/nssdb ). Restart Chrome.');
+  } catch {
+    console.log('NSS trust skipped (certutil missing). Chrome will still warn until NSS trust is added.');
+  }
+  console.log('System store (one-time, your sudo):');
+  console.log(`  sudo install -m 644 ${caCert} /usr/local/share/ca-certificates/x-messenger-local-ca.crt && sudo update-ca-certificates`);
+  console.log('After trusting, reopen: x-messenger gui (warning gone, stays loopback-only HTTPS).');
+  console.log('Remove anytime: x-messenger gui --untrust-ca');
+}
+function untrustCa() {
+  const nssDb = path.join(process.env.HOME || '.', '.pki', 'nssdb');
+  try { execFileSync('certutil', ['-d', `sql:${nssDb}`, '-D', '-n', 'X Messenger Local CA'], { stdio: 'ignore' }); console.log('Removed from NSS store.'); } catch { console.log('NSS entry not present (or certutil missing).'); }
+  console.log('System store removal (your sudo):');
+  console.log('  sudo rm -f /usr/local/share/ca-certificates/x-messenger-local-ca.crt && sudo update-ca-certificates --fresh');
 }
 function certInfo(key, cert) {
   const { X509Certificate } = require('node:crypto');
@@ -251,6 +330,10 @@ async function openGui() {
   const wantVps = args.includes('--vps');
   const wantDomain = valueAfter('--domain');
   const wantRegen = args.includes('--regen-cert');
+  const base0 = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
+  const dataDir0 = path.join(base0, 'tls');
+  if (args.includes('--trust-ca')) { fs.mkdirSync(dataDir0, { recursive: true, mode: 0o700 }); trustCa(dataDir0); return; }
+  if (args.includes('--untrust-ca')) { untrustCa(); return; }
   if (!fs.existsSync(guiPrefsFile()) && wantPort === undefined && !wantLan && !wantLoopback && !wantVps && !args.includes('--cert-info')) {
     console.log('First run: no gui.json yet. Starting with safe defaults (loopback 443, HTTPS, separate window).');
   }
@@ -277,6 +360,25 @@ async function openGui() {
   const dataDir = path.join(base, 'tls');
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const ip = lanIp();
+  // --cert-info never needs a port; show CA + leaf fingerprints even if the GUI port is busy.
+  if (args.includes('--cert-info')) {
+    let key, cert;
+    if ((prefs.bind === 'vps' || wantVps) && validDomain(prefs.domain || wantDomain || '')) {
+      ({ key, cert } = vpsCertPaths(dataDir, (prefs.domain || wantDomain || '').toLowerCase()));
+    } else {
+      ({ key, cert } = ensureCaLeaf(dataDir, (prefs.bind === 'lan' || wantLan) ? ip : undefined, wantRegen));
+    }
+    certInfo(key, cert);
+    try {
+      const { X509Certificate } = require('node:crypto');
+      const { caCert } = caPaths(dataDir);
+      if (fs.existsSync(caCert)) {
+        const ca = new X509Certificate(fs.readFileSync(caCert));
+        console.log(`Local CA: ${caCert}\nCA SHA256: ${ca.fingerprint256}`);
+      }
+    } catch {}
+    return;
+  }
   // Default 443. If taken or privileged, ask for another port and use it.
   const hostProbe = bind === 'loopback' ? '127.0.0.1' : '0.0.0.0';
   let probe = await isPortFree(port, bind === 'loopback' ? '127.0.0.1' : undefined);
@@ -304,14 +406,8 @@ async function openGui() {
       if (!wantRegen) { process.exitCode = 2; return; }
     }
   } else {
-    key = path.join(dataDir, 'localhost-key.pem');
-    cert = path.join(dataDir, 'localhost-cert.pem');
-    if (wantRegen || !fs.existsSync(key) || !fs.existsSync(cert)) {
-      makeCert(key, cert, bind === 'lan' ? ip : undefined);
-      console.log(`TLS cert ${wantRegen ? 'regenerated' : 'created'} (SAN includes ${bind === 'lan' ? ip : '127.0.0.1'}).`);
-    }
+    ({ key, cert } = ensureCaLeaf(dataDir, bind === 'lan' ? ip : undefined, wantRegen));
   }
-  if (args.includes('--cert-info')) { certInfo(key, cert); return; }
   const endpointFile = path.join(dataDir, `endpoint-${process.pid}.txt`);
   try { fs.unlinkSync(endpointFile); } catch {}
   const gui = spawn(process.execPath, [path.join(root, 'server.js')], { cwd: root, detached: true, stdio: 'ignore', env: { ...process.env, X_MESSENGER_TLS_KEY: key, X_MESSENGER_TLS_CERT: cert, X_MESSENGER_ENDPOINT_FILE: endpointFile, X_MESSENGER_PORT: String(port), X_MESSENGER_BIND: bind, X_MESSENGER_LAN_IP: ip, X_MESSENGER_DOMAIN: prefs.domain || '' } });

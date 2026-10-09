@@ -63,6 +63,15 @@ test('lan mode is opt-in and honestly warned', () => {
   assert.ok(!/invisible to DPI|impossible to hack|CIA-grade/i.test(cli + srv + js), 'must not claim invisibility');
 });
 
+test('local CA fixes browser warning without insecure flags', () => {
+  const cli = read('bin/cipherlink');
+  assert.ok(cli.includes('local-ca-cert.pem'), 'CLI must manage a device-local CA');
+  assert.ok(cli.includes('--trust-ca'), 'CLI must offer one-time CA trust');
+  assert.ok(cli.includes('--untrust-ca'), 'CLI must offer CA removal');
+  assert.ok(cli.includes('--cert-info'), 'CLI must show fingerprints for comparison');
+  assert.ok(!/ignore-certificate|allow-insecure/i.test(cli), 'CLI must not bypass cert validation');
+  assert.ok(cli.includes('0600') || cli.includes('0o600'), 'CA key material must be 0600');
+});
 test('service worker never caches remote content', () => {
   const sw = read('service-worker.js');
   assert.ok(!/fetch\(['"]https?:/.test(sw), 'service worker must not fetch remote');
