@@ -27,15 +27,22 @@ npm run build:web
 
 echo "== 4/5 packages =="
 OUT=/home/mhh06/Downloads/X-Messenger
-bash scripts/build-deb.sh "$OUT/X-Messenger-$VER-offline-hardened.deb"
+# Canonical asset names (stable since 1.0.7, all releases carry these):
+#   X-Messenger-<ver>-Linux-amd64.deb
+#   X-Messenger-<ver>-Android-arm64.apk
+#   X-Messenger-<ver>-SHA256SUMS.txt
+DEB="$OUT/X-Messenger-$VER-Linux-amd64.deb"
+APK="$OUT/X-Messenger-$VER-Android-arm64.apk"
+SUMS="$OUT/X-Messenger-$VER-SHA256SUMS.txt"
+bash scripts/build-deb.sh "$DEB"
 ln -sfn /home/mhh06/cipherlink/node_modules node_modules
 npm run android:sync >/dev/null
 export ANDROID_HOME=/home/mhh06/Android/Sdk ANDROID_SDK_ROOT=/home/mhh06/Android/Sdk
 (cd android && JAVA_TOOL_OPTIONS='-Djava.net.preferIPv4Stack=true' ./gradlew --no-daemon :app:assembleDebug >/dev/null)
 rm -f node_modules
-cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT/X-Messenger-$VER-offline.apk"
-(cd "$OUT" && sha256sum "X-Messenger-$VER-offline-hardened.deb" "X-Messenger-$VER-offline.apk" > "X-Messenger-$VER-SHA256SUMS.txt")
-aapt_out=$(/home/mhh06/Android/Sdk/build-tools/36.0.0/aapt dump badging "$OUT/X-Messenger-$VER-offline.apk")
+cp android/app/build/outputs/apk/debug/app-debug.apk "$APK"
+(cd "$OUT" && sha256sum "X-Messenger-$VER-Linux-amd64.deb" "X-Messenger-$VER-Android-arm64.apk" > "X-Messenger-$VER-SHA256SUMS.txt")
+aapt_out=$(/home/mhh06/Android/Sdk/build-tools/36.0.0/aapt dump badging "$APK")
 echo "$aapt_out" | grep -q "versionName='$VER'" || { echo "APK version mismatch"; exit 1; }
 echo "$aapt_out" | grep -q "uses-permission: name='android.permission.INTERNET'" && { echo "APK must not request INTERNET"; exit 1; }
 echo "packages OK"
@@ -58,7 +65,7 @@ Offline core: loopback-only HTTPS separate window. Optional gateway: LAN IP / VP
 Same hardened bundle on Android (CAMERA-only) and Linux.
 Needs independent audit before high-risk use. See SECURITY.md.
 EOF
-gh release upload "v$VER" "$OUT/X-Messenger-$VER-offline-hardened.deb" "$OUT/X-Messenger-$VER-offline.apk" "$OUT/X-Messenger-$VER-SHA256SUMS.txt"
+gh release upload "v$VER" "$OUT/X-Messenger-$VER-Linux-amd64.deb" "$OUT/X-Messenger-$VER-Android-arm64.apk" "$OUT/X-Messenger-$VER-SHA256SUMS.txt"
 for old in $(gh release list --limit 50 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease==false) | .tagName'); do
   if [[ "$old" != "v$VER" ]]; then gh release edit "$old" --prerelease; fi
 done
