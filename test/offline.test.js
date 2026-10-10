@@ -47,8 +47,20 @@ test('linux server defaults to loopback 443 HTTPS separate window with hardened 
   assert.ok(server.includes("minVersion: 'TLSv1.2'"), 'must require TLS 1.2+');
   assert.ok(server.includes('X-Content-Type-Options'), 'must send nosniff');
   assert.ok(server.includes('Content-Security-Policy'), 'must send CSP');
+  assert.ok(server.includes('wasm-unsafe-eval'), 'CSP must allow same-origin WASM bridge');
+  assert.ok(server.includes('/vendor/xm2.wasm') && server.includes('/vendor/wasm_exec.js'), 'server must allow-list the v2 WASM payload');
   assert.ok(server.includes('no-store'), 'must send no-store');
   assert.ok(server.includes('/api/info'), 'must expose read-only TLS info');
+});
+
+test('v2 bridge is WASM-local, experimental, and keeps v1 readable', () => {
+  const js = read('app.js');
+  assert.ok(js.includes('vendor/xm2.wasm') && js.includes('vendor/wasm_exec.js'), 'bridge must load pinned local WASM only');
+  assert.ok(js.includes("fetch('/vendor/xm2.wasm'"), 'WASM must load same-origin');
+  assert.ok(js.includes('v2Banner') && js.includes('unaudited'), 'experimental banner must exist');
+  assert.ok(js.includes("startsWith('XM2.')") && js.includes('decryptText'), 'receive must try XM2 then fall back to XM1');
+  assert.ok(js.includes('buildPairDialog') && js.includes('v2Confirm') && js.includes('OUT LOUD'), 'pairing must require out-loud compare + confirm');
+  assert.ok(js.includes('data-view="pair"') || js.includes("view === 'pair'") || js.includes('pairDialog'), 'pairing must be reachable from the sidebar');
 });
 
 test('lan mode is opt-in and honestly warned', () => {

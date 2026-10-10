@@ -82,3 +82,36 @@ func (k *StubKeyer) Name() string { return k.Platform + " (unimplemented)" }
 func AndroidKeyer() DeviceKeyer { return &StubKeyer{Platform: "Android Keystore"} }
 
 func TPMKeyer() DeviceKeyer { return &StubKeyer{Platform: "TPM 2.0"} }
+
+// BrowserArgon is the in-page calibration: 128 MiB keeps tabs alive where
+// 256 MiB OOMs. Labeled non-hardware alongside MemKeyer below.
+func BrowserArgon() ArgonParams { return ArgonParams{Memory: 128 * 1024, Time: 3, Threads: 4} }
+
+// MemKeyer holds the device key in process memory only. It exists so the
+// browser bridge has the same mixing construction with zero persistence.
+// It is explicitly NOT hardware-backed: Name() says so, and the UI must
+// repeat it. Native builds replace it with Keystore/StrongBox/TPM.
+type MemKeyer struct {
+	key  [32]byte
+	name string
+}
+
+// NewMemKeyer creates a memory-only device key from a seed.
+func NewMemKeyer(name string, seed []byte) *MemKeyer {
+	k := &MemKeyer{name: name}
+	copy(k.key[:], seed)
+	return k
+}
+
+func (k *MemKeyer) DeviceKey() ([]byte, error) {
+	return append([]byte{}, k.key[:]...), nil
+}
+
+func (k *MemKeyer) Destroy() error {
+	zero(k.key[:])
+	return nil
+}
+
+func (k *MemKeyer) Hardware() bool { return false }
+
+func (k *MemKeyer) Name() string { return k.name + " (memory-only, NOT hardware-backed)" }

@@ -64,7 +64,7 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
       const certPem = fs.readFileSync(certPath, 'utf8');
       const cert = new (require('node:crypto').X509Certificate)(certPem);
       const info = {
-        version: '1.0.9', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
+        version: '1.1.0', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
         build: readBuildStamp(),
         tls: { subject: cert.subject, issuer: cert.issuer, validFrom: cert.validFrom, validTo: cert.validTo, fingerprint256: cert.fingerprint256, san: cert.subjectAltName },
       };
@@ -73,7 +73,7 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
     } catch { res.writeHead(500); res.end('TLS info unavailable'); }
     return;
   }
-  const allowed = new Set(['/', '/index.html', '/style.css', '/app.js', '/core.js', '/service-worker.js', '/manifest.webmanifest', '/assets/icon.svg', '/vendor/qrcode.min.js', '/vendor/jsQR.js']);
+  const allowed = new Set(['/', '/index.html', '/style.css', '/app.js', '/core.js', '/service-worker.js', '/manifest.webmanifest', '/assets/icon.svg', '/vendor/qrcode.min.js', '/vendor/jsQR.js', '/vendor/xm2.wasm', '/vendor/wasm_exec.js']);
   if (!allowed.has(normalized)) { res.writeHead(404); res.end('Not found'); return; }
   const file = normalized === '/' ? '/index.html' : normalized;
   const target = path.resolve(root, `.${file}`);
@@ -91,7 +91,7 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'",
   });
   if (req.method === 'HEAD') { res.end(); return; }
   fs.createReadStream(target).pipe(res);
@@ -113,7 +113,7 @@ server.on('listening', () => {
   if (process.env.X_MESSENGER_ENDPOINT_FILE) {
     fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint, { mode: 0o600 });
   }
-  console.log(`X Messenger 1.0.9 running at ${endpoint} [bind=${bindMode}]`);
+  console.log(`X Messenger 1.1.0 running at ${endpoint} [bind=${bindMode}]`);
   if (bindMode === 'lan') console.warn('LAN mode: observable encrypted TLS on this network (IP/port/sizes visible). Compare cert fingerprint in person.');
   if (bindMode === 'vps') console.warn('VPS mode: provider/DNS/network see domain+IP+sizes; message content stays XM1 end-to-end. Keep Cloudflare grey-cloud (DNS-only) for E2E.');
 });

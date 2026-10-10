@@ -276,7 +276,7 @@ function bindMsgPress(article, bubble, id) {
   bubble.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(timer); openMsgMenu(id, e.clientX, e.clientY); });
 }
 function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
-function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else closeDrawer(); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); openModal('#pairDialog'); } else closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
@@ -299,9 +299,9 @@ try {
   vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
   $('#sealTransfer').before(vo);
 } catch {}
-$('#sealTransfer').onclick = async () => { let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2paired && v2send) { $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
 $('#openReceive').onclick = () => openModal('#receiveDialog');
-$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
+$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2' }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
 $('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -487,3 +487,170 @@ $('#enableLan').onclick = () => { if (!$('#lanConsent').checked) { $('#settingsS
 $('#enableVps').onclick = () => { const d = ($('#domainSetting').value || '').trim().toLowerCase(); if (!$('#lanConsent').checked) { $('#settingsStatus').textContent = 'Tick consent first: VPS TLS is normal HTTPS but provider/DNS see domain+IP+sizes.'; return; } if (!validDomainUi(d)) { $('#settingsStatus').textContent = 'Enter your public domain first, e.g. msg.example.com (needs DNS + Let’s Encrypt; see docs/vps-domain-cloudflare.md).'; return; } const p = Number($('#portSetting').value) || 443; $('#settingsStatus').textContent = `To serve your domain: quit GUI and run: x-messenger gui --vps --domain ${d} --port ${p}. Keep Cloudflare grey-cloud (DNS-only) for end-to-end (content stays XM1).`; };
 $('#backLoopback').onclick = () => { $('#settingsStatus').textContent = 'To return to safest offline mode: quit GUI and run: x-messenger gui --loopback --port 8443.'; };
 document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'settings') setTimeout(refreshConn, 50); }));
+// v2 Post-Quantum UI (1.1.0, experimental — unaudited). Same Go core as the
+// terminal demo, running in-page as WebAssembly. New seals default to XM2
+// when a v2 contact is paired; XM1 envelopes always still open (read both,
+// write v2). Session-only: handles die with the page; nothing persists.
+let xm2p = null, v2send = null, v2recv = null, v2paired = false;
+function xm2load() {
+  if (xm2p) return xm2p;
+  xm2p = (async () => {
+    if (typeof window.xm2 !== 'undefined') return window.xm2;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'vendor/wasm_exec.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('wasm_exec.js missing — rebuild the bundle'));
+      document.head.append(s);
+    });
+    const go = new Go();
+    const bin = await (await fetch('/vendor/xm2.wasm', { cache: 'no-store' })).arrayBuffer();
+    const mod = await WebAssembly.instantiate(bin, go.importObject);
+    go.run(mod.instance);
+    if (typeof window.xm2 === 'undefined') throw new Error('v2 bridge failed to start');
+    return window.xm2;
+  })().catch(e => { xm2p = null; throw e; });
+  return xm2p;
+}
+async function xm2call(name, obj) {
+  const bridge = await xm2load();
+  const raw = bridge[name](JSON.stringify(obj || {}));
+  const out = JSON.parse(raw);
+  if (out && out.error) throw new Error(out.error);
+  return out;
+}
+function v2banner(show) {
+  try {
+    let bar = document.getElementById('v2Banner');
+    if (show && !bar) {
+      bar = document.createElement('div');
+      bar.id = 'v2Banner'; bar.className = 'security-ribbon';
+      bar.textContent = '◆ v2 experimental crypto (P-384 + ML-KEM-1024) — unaudited. High-risk use waits for the audit.';
+      document.querySelector('.conversation').prepend(bar);
+    } else if (!show && bar) bar.remove();
+  } catch {}
+}
+// Pairing ceremony (spec §2): two QR scans + out-loud fingerprint.
+// Helpers: b64url decode to bytes for canonical ordering.
+function _b64d(s) {
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+function _b64e(bytes) {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _cmp(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+}
+async function v2pair() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    say('Step 1/4 — generating your hybrid identity…');
+    const me = await xm2call('generateIdentity', {});
+    const half = new Uint8Array(16);
+    crypto.getRandomValues(half);
+    window._v2me = { handle: me.handle, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: _b64e(half) };
+    const code = JSON.stringify({ v: 2, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: window._v2me.half });
+    await QRCode.toCanvas($('#v2MyQr'), code, { width: 220, margin: 2, errorCorrectionLevel: 'M' });
+    say('Step 1/4 — let them scan this code. Then paste THEIR code below and continue.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairContinue() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    const peer = JSON.parse($('#v2PeerCode').value.trim());
+    if (!peer.ecdh || !peer.mlkem || !peer.half) throw new Error('That is not an X Messenger v2 code.');
+    const me = window._v2me;
+    if (!me) throw new Error('Generate your code first (step 1).');
+    say('Step 2/4 — encapsulating to their key…');
+    const enc = await xm2call('encaps', { handle: me.handle, peerMkem: peer.mlkem });
+    const myBundle = _b64d(me.ecdh).join(',') + '|' + _b64d(me.mlkem).join(',');
+    const peerBundle = _b64d(peer.ecdh).join(',') + '|' + _b64d(peer.mlkem).join(',');
+    const iAmLo = myBundle <= peerBundle;
+    // Meeting secret S = halves XORed (order-independent).
+    const a = _b64d(me.half), b = _b64d(peer.half);
+    const sBytes = a.map((x, i) => x ^ b[i % b.length]);
+    // Canonical transcript: ordered pubs + S + my ct (theirs arrives next).
+    const loE = iAmLo ? me.ecdh : peer.ecdh, hiE = iAmLo ? peer.ecdh : me.ecdh;
+    const loM = iAmLo ? me.mlkem : peer.mlkem, hiM = iAmLo ? peer.mlkem : me.mlkem;
+    window._v2peer = { ecdh: peer.ecdh, mlkem: peer.mlkem, half: peer.half, iAmLo, sBytes, loE, hiE, loM, hiM, kMe: enc.k, ctMe: enc.ct };
+    await QRCode.toCanvas($('#v2MyCtQr'), JSON.stringify({ v: 2, ct: enc.ct }), { width: 220, margin: 2, errorCorrectionLevel: 'M' });
+    say('Step 2/4 — let them scan YOUR ciphertext code. Then paste THEIR ciphertext and continue.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairFp() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    const me = window._v2me, peer = window._v2peer;
+    if (!me || !peer) throw new Error('Complete steps 1–2 first.');
+    const ctPeer = JSON.parse($('#v2PeerCt').value.trim());
+    if (!ctPeer.ct) throw new Error('That is not a v2 ciphertext code.');
+    say('Step 3/4 — decapsulating + fingerprinting full transcript…');
+    const kPeer = await xm2call('decaps', { handle: me.handle, ct: ctPeer.ct });
+    const kLo = peer.iAmLo ? peer.kMe : kPeer.k;
+    const kHi = peer.iAmLo ? kPeer.k : peer.kMe;
+    // Fingerprint input: ordered raw transcript incl. BOTH cts (H2 fix).
+    const parts = [peer.loE, peer.hiE, peer.loM, peer.hiM, _b64e(peer.sBytes), peer.ctMe, ctPeer.ct];
+    const blobs = parts.map(p => _b64d(p));
+    blobs.sort((x, y) => _cmp(x, y));
+    const total = blobs.reduce((n, b) => n + b.length, 0);
+    const cat = new Uint8Array(total);
+    let o = 0;
+    for (const b of blobs) { cat.set(b, o); o += b.length; }
+    const fp = await xm2call('fingerprint', { a: _b64e(cat.slice(0, Math.ceil(cat.length / 2))), b: _b64e(cat.slice(Math.ceil(cat.length / 2))) });
+    $('#v2Fingerprint').textContent = fp.hex.replace(/(.{8})/g, '$1 ').trim();
+    window._v2ready = { kLo, kHi, ctMe: peer.ctMe, ctPeer: ctPeer.ct };
+    say('Step 3/4 done. Compare the fingerprint OUT LOUD, tick confirm, then finish.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairFinish() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    if (!$('#v2Confirm').checked) { say('Tick confirm only after comparing out loud.'); return; }
+    const me = window._v2me, peer = window._v2peer, ready = window._v2ready;
+    if (!me || !peer || !ready) throw new Error('Complete steps 1–3 first.');
+    say('Step 4/4 — deriving root chains + ECDH…');
+    const kEcdh = await xm2call('ecdh', { handle: me.handle, peerEcdh: peer.ecdh });
+    const root = await xm2call('deriveRoot', {
+      ecdhLo: peer.loE, ecdhHi: peer.hiE, mkLo: peer.loM, mkHi: peer.hiM,
+      kEcdh: kEcdh.k, kLo: ready.kLo, kHi: ready.kHi, meeting: _b64e(peer.sBytes),
+    });
+    const iAmLo = peer.iAmLo;
+    const send = await xm2call('sender', { chain: iAmLo ? root.chainLoHi : root.chainHiLo, epoch: 0, dir: iAmLo ? 'lo-hi' : 'hi-lo', counter: 0 });
+    const recv = await xm2call('receiver', { chain: iAmLo ? root.chainHiLo : root.chainLoHi, epoch: 0, dir: iAmLo ? 'hi-lo' : 'lo-hi' });
+    v2send = send.handle; v2recv = recv.handle; v2paired = true;
+    v2banner(true);
+    say('Paired ✓ — new seals use XM2 post-quantum crypto. Old XM1 messages still open.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+// v2 pairing dialog (spec §2 ceremony): 4 guided steps.
+function buildPairDialog() {
+  if (document.getElementById('pairDialog')) return;
+  const d = document.createElement('dialog');
+  d.className = 'modal'; d.id = 'pairDialog';
+  d.innerHTML = '<button class="modal-close" data-close>×</button><div class="modal-content">'
+    + '<div class="modal-kicker">V2 PAIRING — FACE TO FACE ONLY</div>'
+    + '<h2>Pair a post-quantum contact</h2>'
+    + '<p>Both phones generate hybrid keys, swap codes by camera, and compare the fingerprint out loud. Experimental crypto — unaudited.</p>'
+    + '<div class="qr-wrap"><canvas id="v2MyQr"></canvas></div>'
+    + '<button class="primary-large" id="v2Step1">1 · Generate my code <span>→</span></button>'
+    + '<label>Their code<textarea id="v2PeerCode" rows="2" placeholder="Paste the code they show"></textarea></label>'
+    + '<button class="primary-large" id="v2Step2">2 · Encapsulate <span>→</span></button>'
+    + '<div class="qr-wrap"><canvas id="v2MyCtQr"></canvas></div>'
+    + '<label>Their ciphertext<textarea id="v2PeerCt" rows="2" placeholder="Paste their ciphertext code"></textarea></label>'
+    + '<div class="fingerprint"><div class="label-row"><span>SAFETY FINGERPRINT — READ OUT LOUD</span></div><code id="v2Fingerprint">—</code></div>'
+    + '<button class="primary-large" id="v2Step3">3 · Compare fingerprint <span>→</span></button>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input id="v2Confirm" type="checkbox" style="width:auto"> We read the SAME fingerprint out loud</label>'
+    + '<button class="primary-large" id="v2Step4">4 · Finish pairing <span>→</span></button>'
+    + '<p id="v2PairStatus" class="receive-status"></p></div>';
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick = () => d.close();
+  d.querySelector('#v2Step1').onclick = v2pair;
+  d.querySelector('#v2Step2').onclick = v2pairContinue;
+  d.querySelector('#v2Step3').onclick = v2pairFp;
+  d.querySelector('#v2Step4').onclick = v2pairFinish;
+}
