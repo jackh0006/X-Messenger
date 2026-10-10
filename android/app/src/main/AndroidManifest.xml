@@ -36,16 +36,7 @@
         </provider>
     </application>
 
-    <!-- Permissions: camera for QR; NFC + Bluetooth advertise/connect for
-         short-range sealed transfers (1.0.8). No INTERNET, no location.
-         No SCAN: this build never scans (central lives in desktop Chrome). -->
+    <!-- Permissions: camera only, for QR scanning. No INTERNET, no radios. -->
 
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.NFC" />
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 </manifest>

@@ -9,9 +9,6 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Local Capacitor plugins must register before the bridge starts.
-        registerPlugin(NfcPlugin.class);
-        registerPlugin(BlePlugin.class);
         super.onCreate(savedInstanceState);
         // Keep ordinary screenshots and task-switcher previews from exposing
         // a message or phrase. This is defense in depth, not DRM.

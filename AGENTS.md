@@ -1,4 +1,4 @@
-# AGENTS.md — AI contributor guide for X Messenger (v1.0.7)
+# AGENTS.md — AI contributor guide for X Messenger (v1.0.8)
 
 You are helping with an offline-first encrypted courier. Real users trust
 this with private words. Be honest, be minimal, never inflate claims.

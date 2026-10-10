@@ -109,68 +109,6 @@
       try { ciphertext.fill(0); salt.fill(0); iv.fill(0); } catch {}
     }
   }
-  // BLE/NFC frame codec (1.0.8). Pure functions: chunk an XM1 envelope into
-  // small authenticated frames for radio transports. Order-independent,
-  // duplicate-tolerant; every frame carries total/index/CRC32. The radio is
-  // untrusted — XM1 AEAD inside remains the only security.
-  const BLE_CHUNK = 160;
-  const crcTable = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[n] = c >>> 0;
-    }
-    return t;
-  })();
-  function crc32hex(str) {
-    let c = 0xFFFFFFFF;
-    for (let i = 0; i < str.length; i++) c = crcTable[(c ^ str.charCodeAt(i)) & 0xFF] ^ (c >>> 8);
-    return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).padStart(8, '0');
-  }
-  function bleEncode(payload) {
-    if (typeof payload !== 'string' || !payload.startsWith('XM1.')) throw new TypeError('BLE frames carry XM1 envelopes only.');
-    if (payload.length > MAX_PAYLOAD_CHARS + 4) throw new Error('Payload too large for radio transfer.');
-    const frames = [];
-    const total = Math.max(1, Math.ceil(payload.length / BLE_CHUNK));
-    for (let i = 0; i < total; i++) {
-      const chunk = payload.slice(i * BLE_CHUNK, (i + 1) * BLE_CHUNK);
-      frames.push(`XMB.${total}.${i}.${crc32hex(total + '.' + i + '.' + chunk)}.${b64url(encoder.encode(chunk))}`);
-    }
-    return frames;
-  }
-  function bleDecode(frames) {
-    if (!Array.isArray(frames) || !frames.length) throw new Error('No radio frames received.');
-    const byIndex = new Map();
-    let total = -1;
-    for (const f of frames) {
-      if (typeof f !== 'string') throw new Error('Unsupported transfer format.');
-      const m = /^XMB\.(\d{1,4})\.(\d{1,4})\.([0-9a-f]{8})\.([A-Za-z0-9\-_]+)$/.exec(f);
-      if (!m) throw new Error('Unsupported transfer format.');
-      const t = Number(m[1]), idx = Number(m[2]);
-      if (t < 1 || t > 2048 || idx < 0 || idx >= t) throw new Error('Unsupported transfer format.');
-      if (total === -1) total = t;
-      if (t !== total) throw new Error('Mixed transfers cannot be combined.');
-      let chunk;
-      try { chunk = decoder.decode(fromB64url(m[4])); } catch { throw new Error('Unsupported transfer format.'); }
-      if (crc32hex(t + '.' + idx + '.' + chunk) !== m[3]) throw new Error('Frame failed integrity check.');
-      if (!byIndex.has(idx)) byIndex.set(idx, chunk);
-    }
-    if (byIndex.size !== total) throw new Error(`Incomplete transfer: ${byIndex.size} of ${total} frames.`);
-    const out = [];
-    for (let i = 0; i < total; i++) out.push(byIndex.get(i));
-    return out.join('');
-  }
-  // NFC handoff envelope (1.0.8): short sealed payloads only. Padded v2
-  // envelopes start near 620 bytes, so NFC needs NTAG216-class tags (888B).
-  // Anything bigger must travel by QR/file/BLE. Sized in UTF-8 bytes.
-  const NFC_MAX = 800;
-  function nfcWrap(payload) {
-    if (typeof payload !== 'string' || !payload.startsWith('XM1.')) throw new TypeError('NFC carries XM1 envelopes only.');
-    const bytes = encoder.encode(payload).length;
-    if (bytes > NFC_MAX) throw new Error(`Too big for NFC (${bytes}B > ${NFC_MAX}B). Use QR, file, or Bluetooth.`);
-    return payload;
-  }
-  root.XMessengerCrypto = { encryptText, decryptText, bleEncode, bleDecode, nfcWrap, NFC_MAX, BLE_CHUNK, ITERATIONS, MAX_TEXT_CHARS, MAX_PAYLOAD_CHARS, VERSION };
+  root.XMessengerCrypto = { encryptText, decryptText, ITERATIONS, MAX_TEXT_CHARS, MAX_PAYLOAD_CHARS, VERSION };
   if (typeof module !== 'undefined') module.exports = root.XMessengerCrypto;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
