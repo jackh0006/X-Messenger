@@ -31,3 +31,16 @@ x-messenger-cli encrypt "private message"
 ## Important publishing boundary
 
 The debug APK is installable for testing, but it is not a Google Play upload. A Play release must be generated as a signed `.aab` with the publisher's private upload key. See `Google-Play/PLAY_RELEASE.md`.
+
+## Inside the Linux package (`/usr/lib/x-messenger`)
+
+Besides the GUI/CLI (`www/`, `bin/`, `server.js`), every deb ships the
+complete v2 payload — nothing left out:
+
+- `core/` — Go v2 source (handshake, ratchet, wire, storage) + `go.mod`
+- `core/v2demo-linux-amd64` — prebuilt demo (`x-messenger v2demo` runs it;
+  rebuilt from source at package time, compare with `go build -trimpath`)
+- `model/` — Tamarin skeleton + Phase gates
+- `docs/PROTOCOL-v2.md` — the v2 specification
+- No `node_modules`, bytecode, CI files, or Gradle caches — pruned at
+  package time (see `scripts/build-deb.sh`).

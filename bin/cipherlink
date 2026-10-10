@@ -27,6 +27,7 @@ Use:
   cipherlink data export [backup.json]
   cipherlink data import backup.json
   cipherlink data delete --yes
+  cipherlink v2demo                 (v2 handshake→shred demo, terminal)
   cipherlink version
   cipherlink help
 
@@ -322,7 +323,9 @@ function openSeparateWindow(endpoint, certPath) {
 async function openGui() {
   // Debian installs immutable, prebuilt files in /usr/lib. Development builds
   // the offline bundle first; the installed app serves that bundle locally.
-  const installedBundle = root.startsWith('/usr/lib/') && fs.existsSync(path.join(root, 'www', 'index.html'));
+  // A prebuilt bundle ships in every install (system or user-space): use it
+  // as-is. Rebuild from source only when the bundle is missing (dev tree).
+  const installedBundle = fs.existsSync(path.join(root, 'www', 'index.html'));
   if (!installedBundle) execFileSync(process.execPath, ['scripts/build-web.js'], { cwd: root, stdio: 'inherit' });
   const wantPort = valueAfter('--port');
   const wantLan = args.includes('--lan');
@@ -433,4 +436,14 @@ else if (args[0] === 'gui' || args[0] === 'gu') openGui();
 else if (args[0] === 'profile' || args[0] === 'profiles') profiles();
 else if (args[0] === 'data') dataCommand();
 else if (args[0] === 'encrypt' || args[0] === 'decrypt') runCrypto();
+else if (args[0] === 'v2demo') {
+  const demo = path.join(root, 'core', 'v2demo-linux-amd64');
+  if (!fs.existsSync(demo)) {
+    console.error('v2 demo binary missing. Rebuild it from source: cd core && go build -trimpath -o v2demo-linux-amd64 ./cmd/xm2demo (needs Go >= 1.24).');
+    process.exitCode = 1;
+  } else {
+    const child = spawn(demo, args.slice(1), { stdio: 'inherit' });
+    child.on('exit', (code) => { process.exitCode = code || 0; });
+  }
+}
 else { console.error(`Unknown command "${args[0]}". Use: x-messenger gui`); help(); process.exitCode = 2; }

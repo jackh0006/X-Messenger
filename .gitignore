@@ -8,3 +8,5 @@ android/local.properties
 *.jks
 key.properties
 *.log
+# Prebuilt v2 demo binary (rebuilt by scripts/build-deb.sh when Go is present).
+core/v2demo-linux-amd64
