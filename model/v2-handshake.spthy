@@ -1,0 +1,72 @@
+/*
+ * X Messenger v2 handshake + ratchet — TAMARIN SKELETON (Phase 0).
+ * Status: structure + intended lemmas only. NOT yet machine-checked
+ * (requires a Tamarin install). Do not treat as verification.
+ *
+ * Models docs/PROTOCOL-v2.md §2–§4 abstractly:
+ *  - P-384 ECDH via built-in diffie-hellman ('g'^a)
+ *  - ML-KEM-1024 as abstract encaps/decaps function pair
+ *  - meeting secret S as a fresh value exchanged over a secure (face to
+ *    face) channel; QR camera channel modeled as authentic-but-public
+ *  - HKDF steps as one-way functions; chain stepping as state updates
+ */
+theory Xm2Handshake
+begin
+
+builtins: diffie-hellman, hashing, symmetric-encryption
+
+// --- Abstract ML-KEM-1024 -------------------------------------------
+// encaps(pk, randomness) -> ciphertext; decaps(sk, ct) -> shared secret.
+functions: encaps/2, decaps/2, mlkem_pk/1, mlkem_combine/3, xm2_hkdf/3
+equations:
+  decaps(sk, encaps(mlkem_pk(sk), r)) = mlkem_combine(sk, encaps(mlkem_pk(sk), r), r)
+
+// --- Setup: face-to-face exchange (secure channel) -------------------
+rule Setup_Initiator:
+  [ Fr(~a), Fr(~mk), Fr(~sA) ]
+  -->
+  [ SetupA(~a, ~mk, ~sA)
+  , Out(< 'g'^~a, mlkem_pk(~mk), ~sA >)   // QR: authentic, public
+  ]
+
+rule Setup_Responder:
+  [ Fr(~b), Fr(~mkB), Fr(~sB)
+  , In(<A, MKB_peer, sA>) ]               // scanned QR
+  -->
+  [ SetupB(~b, ~mkB, ~sB, A, MKB_peer, sA)
+  , Out(< 'g'^~b, mlkem_pk(~mkB), ~sB >)
+  ]
+
+// Root derivation: hkdf(ecdh || kem || meetingSecret, transcript).
+// S = sA XOR sB abstracted as pairing <sA, sB> inside hkdf input.
+rule DeriveRoot_A:
+  [ SetupA(a, mkA, sA), In(<B, MKB, sB>) ]
+  -->
+  [ ChainA( xm2_hkdf(<'root', < ('g'^a)^B, decaps(mkA, encaps(MKB, $R)), <sA, sB> >, B >, B) )
+  , SecretChain( xm2_hkdf(<'root', < ('g'^a)^B, decaps(mkA, encaps(MKB, $R)), <sA, sB> >, B >, B) )
+  ]
+
+// --- Message step: one-time key, advance chain, delete old -------------
+rule Send_A:
+  [ ChainA(chain), Fr(~ctr) ]
+  -->
+  [ ChainA( xm2_hkdf(<'step', chain, ~ctr>, ~ctr) )
+  , Out( senc(<~ctr, $msg>, xm2_hkdf(<'msg', chain, ~ctr>, ~ctr)) )
+  ]
+
+// --- Intended lemmas (TODO: prove with Tamarin) ------------------------
+// lemma secrecy_root:
+//   "All r #i. SecretChain(r) @ #i ==> not (Ex #j. K(r) @ #j)"
+//
+// lemma forward_secrecy_after_step:
+//   "All c c2 #i #j. ChainA(c) @ #i & ChainA(c2) @ #j & #i < #j
+//    ==> not (Ex #k. K(c) @ #k)"
+//
+// lemma healing_at_renewal:
+//   "All r r2 #i #j. Renew(r, r2) @ #i & SecretChain(r) @ #j & #j < #i
+//    ==> not (Ex #k. K(r) @ #k)"
+//
+// lemma no_replay_accept:
+//   "All ctr #i #j. Accept(ctr) @ #i & Accept(ctr) @ #j ==> #i = #j"
+
+end
