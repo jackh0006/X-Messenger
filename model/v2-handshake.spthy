@@ -3,11 +3,11 @@
  * Status: structure + intended lemmas only. NOT yet machine-checked
  * (requires a Tamarin install). Do not treat as verification.
  *
- * Models docs/PROTOCOL-v2.md §2–§4 abstractly:
+ * Models docs/PROTOCOL-v2.md §2–§4 abstractly (DRAFT 0.2):
  *  - P-384 ECDH via built-in diffie-hellman ('g'^a)
- *  - ML-KEM-1024 as abstract encaps/decaps function pair
- *  - meeting secret S as a fresh value exchanged over a secure (face to
- *    face) channel; QR camera channel modeled as authentic-but-public
+ *  - ML-KEM-1024 as abstract encaps/decaps function pair, BOTH directions
+ *  - meeting halves + both cts covered by the fingerprint comparison
+ *  - ordered identities (lo/hi); epoch bound into message AAD
  *  - HKDF steps as one-way functions; chain stepping as state updates
  */
 theory Xm2Handshake
@@ -46,12 +46,12 @@ rule DeriveRoot_A:
   , SecretChain( xm2_hkdf(<'root', < ('g'^a)^B, decaps(mkA, encaps(MKB, $R)), <sA, sB> >, B >, B) )
   ]
 
-// --- Message step: one-time key, advance chain, delete old -------------
+// --- Sending: epoch-bound AAD, one-time key, advance, delete -----------
 rule Send_A:
-  [ ChainA(chain), Fr(~ctr) ]
+  [ ChainA(chain, epoch), Fr(~ctr) ]
   -->
-  [ ChainA( xm2_hkdf(<'step', chain, ~ctr>, ~ctr) )
-  , Out( senc(<~ctr, $msg>, xm2_hkdf(<'msg', chain, ~ctr>, ~ctr)) )
+  [ ChainA( xm2_hkdf(<'step', chain, ~ctr>, ~ctr), epoch )
+  , Out( senc(<epoch, ~ctr, $msg>, xm2_hkdf(<'msg', chain, ~ctr>, ~ctr)) )
   ]
 
 // --- Intended lemmas (TODO: prove with Tamarin) ------------------------
@@ -66,7 +66,9 @@ rule Send_A:
 //   "All r r2 #i #j. Renew(r, r2) @ #i & SecretChain(r) @ #j & #j < #i
 //    ==> not (Ex #k. K(r) @ #k)"
 //
-// lemma no_replay_accept:
-//   "All ctr #i #j. Accept(ctr) @ #i & Accept(ctr) @ #j ==> #i = #j"
+// lemma no_replay_across_epochs:
+//   "All ep ctr #i #j. Accept(ep, ctr) @ #i & Accept(ep, ctr) @ #j ==> #i = #j"
+//   "All ep ep2 ctr #i. Accept(ep, ctr) @ #i & CurrentEpoch(ep2) @ #i
+//    ==> ep = ep2"
 
 end
