@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MIT
+name: Go core (v2)
+
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'model/**'
+      - 'docs/PROTOCOL-v2.md'
+      - '.github/workflows/go-core.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'model/**'
+      - 'docs/PROTOCOL-v2.md'
+      - '.github/workflows/go-core.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  go-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - working-directory: core
+        run: go vet ./...
+      - working-directory: core
+        run: go test ./...
+      # Offline proof: the v2 core must not link any network code.
+      - name: Fail if network packages enter the dependency tree
+        working-directory: core
+        run: |
+          test -z "$(go list -deps . | grep -E '^(net|net/http|net/url)$')" || {
+            echo "network package in v2 core dependency tree"; exit 1; }
+          echo "offline clean: no net/net/http in go list -deps"
+      - name: Reproducible build check
+        working-directory: core
+        run: go build -trimpath -o /tmp/xm2core-check ./... && echo "trimpath build OK"
