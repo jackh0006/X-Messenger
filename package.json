@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "npm run gui",
-    "test": "node --test test/crypto.test.js test/offline.test.js test/ui-invariants.test.js",
+    "test": "node --test test/crypto.test.js test/offline.test.js test/ui-invariants.test.js test/messages.test.js",
     "build:web": "node scripts/build-web.js",
     "android:setup": "npm run android:sync && npx cap open android",
     "android:sync": "npm run build:web && npx cap sync android",

@@ -42,10 +42,10 @@ function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minut
 // Session message store (1.0.8). Plaintext lives ONLY here, in this page.
 // Lock, close, background-clear, or Clear chat wipes it. Nothing persists.
 const chatStore = { list: [], seq: 0 };
-let chatFilter = '', selectMode = false;
+let chatFilter = '', selectMode = false, starFilter = false, replyTarget = null;
 const selectedIds = new Set();
 function chatEntry(dir, text, opts = {}) {
-  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0 };
+  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0, replyTo: opts.replyTo || '', starred: false, fwd: !!opts.fwd };
   chatStore.list.push(entry);
   if (entry.viewOnce) setTimeout(() => deleteMessage(entry.id, true), 30000);
   return entry;
@@ -77,15 +77,16 @@ function renderChat() {
   const box = $('#messages'); if (!box) return;
   box.replaceChildren();
   const q = chatFilter.trim().toLowerCase();
-  const items = q ? chatStore.list.filter(m => m.text.toLowerCase().includes(q)) : chatStore.list;
+  let items = q ? chatStore.list.filter(m => (m.text || '').toLowerCase().includes(q)) : [...chatStore.list];
+  if (starFilter) items = items.filter(m => m.starred);
   if (!chatStore.list.length) {
     const w = document.createElement('div'); w.className = 'welcome-card';
     w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
     box.append(w); updateSelectBar(); return;
   }
-  if (q) {
+  if (q || starFilter) {
     const n = document.createElement('div'); n.className = 'msg-count'; n.id = 'chatStatus';
-    n.textContent = `${items.length} of ${chatStore.list.length} match`; box.append(n);
+    n.textContent = starFilter && !q ? `${items.length} starred` : `${items.length} of ${chatStore.list.length} match`; box.append(n);
   }
   for (const m of items) {
     const article = document.createElement('article'); article.className = `message ${m.dir === 'incoming' ? 'incoming' : 'outgoing'}`; article.dataset.mid = m.id;
@@ -96,16 +97,25 @@ function renderChat() {
       cb.onchange = () => { cb.checked ? selectedIds.add(m.id) : selectedIds.delete(m.id); updateSelectBar(); };
       bubble.append(cb);
     }
+    if (m.replyTo) {
+      const src = chatStore.list.find(x => x.id === m.replyTo);
+      const quote = document.createElement('div'); quote.className = 'msg-quote';
+      quote.textContent = src && src.text ? `↩ ${src.text.slice(0, 80)}` : '↩ original message deleted';
+      bubble.append(quote);
+    }
     if (m.sealedOnly) {
       const lock = document.createElement('button'); lock.className = 'sealed-open'; lock.textContent = `🔒 sealed envelope${m.via ? ` (${m.via})` : ''} — tap to open`;
       lock.onclick = () => openEnvelope(m.id);
       bubble.append(lock);
     } else {
-      bubble.append(document.createTextNode(m.text));
+      const span = document.createElement('span'); span.className = 'msg-text';
+      span.textContent = m.text;
+      bubble.append(span);
     }
     const stamp = document.createElement('time');
-    stamp.textContent = `${new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date(m.ts))}${m.dir === 'outgoing' ? '  ✓' : ''}${m.viewOnce ? '  👁 once' : ''}${m.via ? `  ${m.via}` : ''}`;
+    stamp.textContent = `${new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date(m.ts))}${m.dir === 'outgoing' ? (m.fwd ? '  ✓✓ forwarded' : '  ✓✓') : ''}${m.viewOnce ? '  👁 once' : ''}${m.starred ? '  ★' : ''}${m.via ? `  ${m.via}` : ''}`;
     bubble.append(stamp); article.append(bubble);
+    bindMsgPress(article, bubble, m.id);
     const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = '×'; del.setAttribute('aria-label', 'Delete this message');
     del.onclick = () => deleteMessage(m.id);
     article.append(del); box.append(article);
@@ -119,6 +129,151 @@ function updateSelectBar() {
     $('#expSelected').style.display = selectMode ? '' : 'none';
     $('#cancelSelect').style.display = selectMode ? '' : 'none';
   } catch {}
+}
+// Telegram-style message interactions (1.0.8): tap = full menu, hold =
+// quick bar. Everything runs on the session store; nothing leaves.
+let pendingForward = false, pendingRekey = null;
+function msgById(id) { return chatStore.list.find(m => m.id === id); }
+function copyMsgText(id) {
+  const m = msgById(id); if (!m || m.sealedOnly) return 'Nothing to copy.';
+  let text = m.text;
+  try {
+    const sel = window.getSelection();
+    const bubble = document.querySelector(`article[data-mid="${id}"] .msg-text`);
+    if (sel && sel.toString() && bubble && sel.anchorNode && bubble.contains(sel.anchorNode)) text = sel.toString();
+  } catch {}
+  navigator.clipboard.writeText(text).catch(() => {});
+  clearClipboardLater();
+  return 'Copied (clears in 30s).';
+}
+function replyToMsg(id) {
+  const m = msgById(id); if (!m) return;
+  replyTarget = id;
+  showReplyBar(m);
+  $('#messageInput').focus();
+}
+function showReplyBar(m) {
+  hideReplyBar();
+  const bar = document.createElement('div'); bar.id = 'replyBar'; bar.className = 'reply-bar';
+  const q = document.createElement('span'); q.className = 'msg-quote';
+  q.textContent = `↩ ${(m.text || 'sealed envelope').slice(0, 80)}`;
+  const x = document.createElement('button'); x.className = 'icon-button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Cancel reply');
+  x.onclick = hideReplyBar;
+  bar.append(q, x);
+  document.querySelector('.composer-wrap').prepend(bar);
+}
+function hideReplyBar() { replyTarget = null; try { $('#replyBar')?.remove(); } catch {} }
+function forwardMsg(id) {
+  const m = msgById(id); if (!m || m.sealedOnly) return;
+  pendingForward = true;
+  pendingText = m.text;
+  openModal('#phraseDialog');
+  $('#messageInput').value = '';
+}
+async function rekeyMsg(id) {
+  const m = msgById(id); if (!m || !m.sealed) return 'Nothing to re-key.';
+  pendingRekey = id;
+  pendingText = m.text;
+  openModal('#phraseDialog');
+  return 'Choose a NEW phrase — the envelope becomes brand-new randomness.';
+}
+function toggleStar(id) {
+  const m = msgById(id); if (!m) return;
+  m.starred = !m.starred;
+  renderChat();
+}
+function showDetails(id) {
+  const m = msgById(id); if (!m) return;
+  closeMsgMenu();
+  const d = document.createElement('dialog'); d.className = 'modal'; d.id = 'msgDetailsDialog';
+  const when = new Date(m.ts).toLocaleString();
+  d.innerHTML = `<button class="modal-close" data-close>×</button><div class="modal-content"><div class="modal-kicker">MESSAGE DETAILS</div><h2>${m.dir === 'incoming' ? 'Received' : 'Sent'} · ${when}</h2><div class="guide-grid"><div><b>◈</b><p><strong>Transport</strong><small>${m.via || 'qr'} · sealed ${m.sealed ? m.sealed.length + ' B' : '—'}</small></p></div><div><b>★</b><p><strong>Starred</strong><small>${m.starred ? 'yes (session only)' : 'no'}</small></p></div><div><b>👁</b><p><strong>View-once</strong><small>${m.viewOnce ? 'yes — auto-deletes' : 'no'}</small></p></div><div><b>◇</b><p><strong>Message ID</strong><small>${m.id}</small></p></div></div><p class="subtle">Session-only: plaintext vanishes on lock or close. Sealed envelope re-readable only with its phrase.</p></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick = () => { d.close(); d.remove(); };
+  d.showModal();
+}
+function closeMsgMenu() { try { $('#msgMenu')?.remove(); } catch {} try { $('#msgQuick')?.remove(); } catch {} }
+function openMsgMenu(id, x, y) {
+  closeMsgMenu();
+  const m = msgById(id); if (!m) return;
+  const menu = document.createElement('div'); menu.id = 'msgMenu'; menu.className = 'msg-menu'; menu.setAttribute('role', 'menu');
+  const items = [
+    ['↩ Reply', () => replyToMsg(id)],
+    ['⧉ Copy', () => flashMenu(copyMsgText(id))],
+    ['🔑 Re-key (new random envelope)', () => rekeyMsg(id).then(t => flashMenu(t))],
+    ['➦ Forward', () => forwardMsg(id)],
+    [m.starred ? '☆ Unstar' : '★ Add to favorites', () => { toggleStar(id); }],
+    ['🗑 Delete', () => deleteMessage(id)],
+    ['ⓘ Details', () => showDetails(id)],
+  ];
+  if (!m.sealedOnly) items.splice(2, 0, ['✂ Copy selection', () => flashMenu(copyMsgText(id))]);
+  for (const [label, fn] of items) {
+    const b = document.createElement('button'); b.textContent = label; b.setAttribute('role', 'menuitem');
+    b.onclick = () => { closeMsgMenu(); fn(); };
+    menu.append(b);
+  }
+  document.body.append(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
+  setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+}
+function flashMenu(text) {
+  closeMsgMenu();
+  try { $('#chatStatus').textContent = text; } catch {}
+  renderChat();
+}
+function dismissMsgMenu(e) {
+  if (e && e.target && (e.target.closest('#msgMenu') || e.target.closest('#msgQuick'))) {
+    setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+    return;
+  }
+  closeMsgMenu();
+}
+function openMsgQuick(id, x, y) {
+  closeMsgMenu();
+  if (!msgById(id)) return;
+  const bar = document.createElement('div'); bar.id = 'msgQuick'; bar.className = 'msg-quick';
+  const mk = (label, title, fn) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.onclick = () => { closeMsgMenu(); fn(); }; bar.append(b); return b; };
+  mk('⧉', 'Copy (top right)', () => flashMenu(copyMsgText(id)));
+  mk('➦', 'Forward', () => forwardMsg(id));
+  mk('🗑', 'Delete', () => deleteMessage(id));
+  mk('⋮', 'More — incl. Add to favorites', () => openMsgMenu(id, x, y));
+  document.body.append(bar);
+  const r = bar.getBoundingClientRect();
+  bar.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+  bar.style.top = `${Math.max(8, y - r.height - 8)}px`;
+  setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+}
+function bindMsgPress(article, bubble, id) {
+  bubble.style.cursor = 'pointer';
+  bubble.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, .msg-select')) return;
+    const r = bubble.getBoundingClientRect();
+    openMsgMenu(id, r.left + 16, r.bottom + 4);
+  });
+  let timer = null, sx = 0, sy = 0;
+  const start = e => {
+    const t = e.touches ? e.touches[0] : e;
+    sx = t.clientX; sy = t.clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const r = bubble.getBoundingClientRect();
+      openMsgQuick(id, r.left + r.width / 2, r.top);
+    }, 500);
+  };
+  const cancel = e => {
+    if (e.touches && e.touches[0]) {
+      const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+      if (dx * dx + dy * dy > 100) clearTimeout(timer);
+    } else clearTimeout(timer);
+  };
+  bubble.addEventListener('touchstart', start, { passive: true });
+  bubble.addEventListener('touchmove', cancel, { passive: true });
+  bubble.addEventListener('touchend', () => clearTimeout(timer));
+  bubble.addEventListener('mousedown', e => { if (e.button === 0) start(e); });
+  bubble.addEventListener('mouseup', () => clearTimeout(timer));
+  bubble.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(timer); openMsgMenu(id, e.clientX, e.clientY); });
 }
 function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
 function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else closeDrawer(); }
@@ -144,7 +299,7 @@ try {
   vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
   $('#sealTransfer').before(vo);
 } catch {}
-$('#sealTransfer').onclick = async () => { let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#sealTransfer').onclick = async () => { let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
 $('#openReceive').onclick = () => openModal('#receiveDialog');
 $('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
@@ -173,7 +328,7 @@ try { $('#messageInput').after(msgCount); } catch {}
 // Chat toolbar: search this session, multi-select, clear chat (1.0.8).
 try {
   const bar = document.createElement('div'); bar.id = 'chatBar'; bar.className = 'chat-bar';
-  bar.innerHTML = '<input id="chatSearch" type="search" placeholder="Search this session…" autocomplete="off"><span id="selCount" class="msg-count"></span><button id="toggleSelect" class="icon-button" title="Select messages">☑</button><button id="delSelected" class="icon-button" title="Delete selected" style="display:none">🗑</button><button id="expSelected" class="icon-button" title="Export selected sealed envelopes" style="display:none">⤓</button><button id="cancelSelect" class="icon-button" title="Cancel selection" style="display:none">✕</button><button id="clearChat" class="icon-button" title="Delete all session messages">🧹</button>';
+  bar.innerHTML = '<input id="chatSearch" type="search" placeholder="Search this session…" autocomplete="off"><span id="selCount" class="msg-count"></span><button id="starFilterBtn" class="icon-button" title="Show starred only">★</button><button id="toggleSelect" class="icon-button" title="Select messages">☑</button><button id="delSelected" class="icon-button" title="Delete selected" style="display:none">🗑</button><button id="expSelected" class="icon-button" title="Export selected sealed envelopes" style="display:none">⤓</button><button id="cancelSelect" class="icon-button" title="Cancel selection" style="display:none">✕</button><button id="clearChat" class="icon-button" title="Delete all session messages">🧹</button>';
   $('#messages').before(bar);
   $('#chatSearch').addEventListener('input', e => { chatFilter = e.target.value; renderChat(); });
   $('#toggleSelect').onclick = () => { selectMode = !selectMode; selectedIds.clear(); renderChat(); };
@@ -186,8 +341,22 @@ try {
     link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
   };
   $('#clearChat').onclick = () => clearChat(false);
+  $('#starFilterBtn').onclick = () => { starFilter = !starFilter; $('#starFilterBtn').classList.toggle('on', starFilter); renderChat(); };
   const chatCss = document.createElement('style');
-  chatCss.textContent = '.chat-bar{display:flex;gap:6px;align-items:center;padding:8px 30px 0}.chat-bar input{flex:1;padding:8px 10px;border:1px solid var(--line,#e6ebf1);border-radius:9px;background:transparent;color:inherit;font:inherit}#toggleSelect.on{background:#e6f8f3}.msg-del{border:0;background:transparent;color:#9aa7b6;font-size:16px;cursor:pointer;align-self:flex-start}.msg-select{width:auto;margin-right:8px}';
+  chatCss.textContent = '.chat-bar{display:flex;gap:6px;align-items:center;padding:8px 30px 0}.chat-bar input{flex:1;padding:8px 10px;border:1px solid var(--line,#e6ebf1);border-radius:9px;background:transparent;color:inherit;font:inherit}#toggleSelect.on{background:#e6f8f3}.msg-del{border:0;background:transparent;color:#9aa7b6;font-size:16px;cursor:pointer;align-self:flex-start}.msg-select{width:auto;margin-right:8px}'
+  + '.message{position:relative}.message-bubble{position:relative;user-select:text;-webkit-user-select:text;transition:transform .2s ease-out,box-shadow .2s ease-out}'
+  + '.msg-quote{border-left:3px solid #5488d8;padding:4px 8px;margin-bottom:6px;background:#5488d812;border-radius:0 6px 6px 0;font-size:11px;opacity:.9;white-space:pre-wrap;word-break:break-word}'
+  + '.msg-text{white-space:pre-wrap;word-break:break-word}'
+  + '.msg-menu{position:fixed;z-index:200;min-width:220px;background:#fff;color:#26364a;border-radius:12px;box-shadow:0 12px 40px #0e183b55;padding:6px;animation:msgpop .2s ease-out}'
+  + '.msg-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:10px 12px;border-radius:8px;font:inherit;cursor:pointer}'
+  + '.msg-menu button:hover{background:#f1f4f8}'
+  + '.msg-quick{position:fixed;z-index:200;display:flex;gap:2px;background:#17212b;border-radius:24px;padding:6px 8px;box-shadow:0 12px 40px #0e183b66;animation:msgpop .2s ease-out}'
+  + '.msg-quick button{border:0;background:transparent;color:#fff;font-size:18px;padding:6px 10px;border-radius:16px;cursor:pointer}'
+  + '.msg-quick button:hover{background:#ffffff22}'
+  + '.reply-bar{display:flex;gap:8px;align-items:center;padding:8px 30px 0}.reply-bar .msg-quote{flex:1;margin:0}'
+  + '@keyframes msgpop{from{opacity:0;transform:scale(.96) translateY(4px)}to{opacity:1;transform:none}}'
+  + '@media (prefers-reduced-motion:reduce){.message-bubble,.msg-menu,.msg-quick{transition:none;animation:none}}'
+  + 'html[data-x-theme="dark"] .msg-menu{background:#1a2636;color:#e9eef7}html[data-x-theme="dark"] .msg-menu button:hover{background:#2a3a4f}html[data-x-theme="dark"] .msg-quote{background:#5488d822}';
   document.head.append(chatCss);
 } catch {}
 function updateMsgCount() { try { const n = $('#messageInput').value.length; msgCount.textContent = `${n} / 900`; msgCount.style.color = n > 900 ? '#c85360' : ''; } catch {} }
