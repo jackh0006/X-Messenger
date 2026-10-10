@@ -9,7 +9,10 @@ const root = path.resolve(__dirname, '..');
 let commit = 'unknown', dirty = false;
 try {
   commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  dirty = execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim().length > 0;
+  // Tracked modifications only: pre-existing untracked dirs must not taint
+  // the stamp. Untracked files we created are either committed or ignored.
+  try { execFileSync('git', ['diff', '--quiet', 'HEAD', '--'], { cwd: root, stdio: 'ignore' }); }
+  catch { dirty = true; }
 } catch {}
 const info = {
   version: require(path.join(root, 'package.json')).version,
