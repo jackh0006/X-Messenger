@@ -94,3 +94,15 @@ test('session messages support delete, backup v2 carries sealed envelopes only',
   assert.ok(js.includes('x-messenger-why-seen-v1') && js.includes('removeItem'), 'delete-all must include first-run flag');
   assert.ok(js.includes('chatSearch') && js.includes('toggleSelect'), 'search + select UI must exist');
 });
+
+test('build stamp proves which commit serves', () => {
+  const cli = read('bin/cipherlink');
+  const srv = read('server.js');
+  const js = read('app.js');
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'build-info.js')), 'build-info generator must exist');
+  assert.ok(cli.includes('buildStamp'), 'CLI version must append the stamp');
+  assert.ok(srv.includes('readBuildStamp') && srv.includes('build:'), '/api/info must carry the stamp');
+  assert.ok(js.includes('buildTag') && js.includes('ABOUT X MESSENGER v'), 'About + footer must show the stamp');
+  const gi = read('.gitignore');
+  assert.ok(gi.includes('build-info.json'), 'stamp file must stay uncommitted');
+});

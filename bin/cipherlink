@@ -9,6 +9,15 @@ global.crypto = global.crypto || webcrypto;
 const root = path.resolve(__dirname, '..');
 const { encryptText, decryptText, VERSION } = require(path.join(root, 'core.js'));
 const APP_VERSION = VERSION || require(path.join(root, 'package.json')).version || '0.0.0-unknown';
+// Build stamp (commit + date) proves which exact build serves. Generated at
+// package time by scripts/build-info.js; absent in dev trees (plain version).
+function buildStamp() {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(root, 'build-info.json'), 'utf8'));
+    if (info && info.commit && info.commit !== 'unknown') return ` (${info.commit} ${String(info.date || '').slice(0, 10)})`;
+  } catch {}
+  return '';
+}
 const args = process.argv.slice(2);
 const valueAfter = (flag) => {
   const index = args.indexOf(flag);
@@ -430,7 +439,7 @@ async function openGui() {
 }
 
 if (!args.length || args[0] === 'help' || args[0] === '--help') help();
-else if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') console.log(APP_VERSION);
+else if (args[0] === 'version' || args[0] === '--version' || args[0] === '-V') console.log(APP_VERSION + buildStamp());
 else if (args[0] === 'setup') runSetup();
 else if (args[0] === 'gui' || args[0] === 'gu') openGui();
 else if (args[0] === 'profile' || args[0] === 'profiles') profiles();

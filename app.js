@@ -459,6 +459,14 @@ async function refreshConn() {
     const info = await r.json();
     const where = info.bind === 'vps' ? `on VPS ${info.domain || info.host} (normal HTTPS; provider/DNS see domain+IP+sizes)` : info.bind === 'lan' ? 'on LAN (observable encrypted TLS)' : 'on loopback only (this device, zero egress)';
     $('#connStatus').textContent = `Running ${where} at https://${info.host}${info.port === 443 ? '' : `:${info.port}`} · v${info.version}`;
+    try {
+      const b = info.build && info.build.commit ? ` · build ${info.build.commit}${info.build.date ? ' ' + String(info.build.date).slice(0, 10) : ''}` : '';
+      const kick = document.querySelector('#aboutDialog .modal-kicker');
+      if (kick) kick.textContent = `ABOUT X MESSENGER v${info.version}${b}`;
+      let tag = document.getElementById('buildTag');
+      if (!tag) { tag = document.createElement('small'); tag.id = 'buildTag'; tag.className = 'msg-count'; document.querySelector('.device-card div')?.append(tag); }
+      if (tag) tag.textContent = b ? `build${b}` : '';
+    } catch {}
     if (!$('#portSetting').value) $('#portSetting').placeholder = `${info.port} (current)`;
     if (info.domain && !$('#domainSetting').value) $('#domainSetting').placeholder = `${info.domain} (current)`;
     const t = info.tls || {};

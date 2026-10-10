@@ -8,6 +8,7 @@ stage_dir="$(mktemp -d)"
 trap 'rm -rf "$stage_dir"' EXIT
 
 node "$project_root/scripts/build-web.js" >/dev/null
+node "$project_root/scripts/build-info.js" >/dev/null
 
 # v2 demo binary (terminal handshake→shred loop). Rebuilt here so the
 # shipped binary always matches the shipped source; skipped with a warning
