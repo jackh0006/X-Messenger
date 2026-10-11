@@ -66,6 +66,7 @@ rm -rf "$stage_dir/usr/lib/x-messenger/.git" \
   "$stage_dir/usr/lib/x-messenger/.github" \
   "$stage_dir/usr/lib/x-messenger/node_modules" \
   "$stage_dir/usr/lib/x-messenger/android/.gradle" \
+  "$stage_dir/usr/lib/x-messenger/android/.idea" \
   "$stage_dir/usr/lib/x-messenger/android/app/build" \
   "$stage_dir/usr/lib/x-messenger/android/local.properties" \
   "$stage_dir/usr/lib/x-messenger/Downloads" \
