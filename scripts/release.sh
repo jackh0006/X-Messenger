@@ -91,7 +91,9 @@ for APK in "$OUT/X-Messenger-$VER-Android-arm64.apk" "$OUT/X-Messenger-$VER-Andr
   echo "OK $APK"
 done
 # SBOM (best-effort; npm sbom needs registry access).
-(npm sbom --omit=dev --sbom-format=cyclonedx > "$OUT/X-Messenger-$VER-SBOM.cdx.json") || echo "warn: SBOM skipped (offline?)" >&2
+(npm sbom --omit=dev --sbom-format=cyclonedx > "$OUT/X-Messenger-$VER-SBOM.cdx.json") || { echo "warn: SBOM skipped (offline?)" >&2; rm -f "$OUT/X-Messenger-$VER-SBOM.cdx.json"; }
+# Remove a stale SUMS first so the new file never hashes itself.
+rm -f "$OUT/X-Messenger-$VER-SHA256SUMS.txt"
 (cd "$OUT" && sha256sum X-Messenger-"$VER"-* > "X-Messenger-$VER-SHA256SUMS.txt")
 echo "packages OK — see $OUT"
 
