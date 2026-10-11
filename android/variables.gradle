@@ -1,7 +1,11 @@
 ext {
+    // minSdk 24 = Android 7.0: covers Android 9 (API 28) and all newer.
+    // Do NOT raise without a major-version note: old devices are the point.
     minSdkVersion = 24
-    compileSdkVersion = 37
-    targetSdkVersion = 37
+    // 36 = Android 16 stable (installed SDK, Play-compliant Oct 2026).
+    // 37 is a preview SDK: it breaks old WebViews and Play review.
+    compileSdkVersion = 36
+    targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'
     androidxAppCompatVersion = '1.7.1'
     androidxCoordinatorLayoutVersion = '1.3.0'

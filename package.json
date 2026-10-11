@@ -1,6 +1,6 @@
 {
   "name": "x-messenger-offline",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Open-source offline encrypted QR courier",
   "main": "index.js",
   "bin": {
@@ -14,6 +14,11 @@
     "android:sync": "npm run build:web && npx cap sync android",
     "android:open": "npx cap open android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:apk:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "android:aab": "npm run android:sync && cd android && ./gradlew bundleRelease",
+    "build:deb": "bash scripts/build-deb.sh",
+    "build:tarball": "bash scripts/build-tarball.sh",
+    "build:windows": "bash scripts/build-windows.sh",
     "gui": "node bin/cipherlink gui",
     "linux:install": "bash scripts/install-linux-launcher.sh"
   },

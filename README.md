@@ -3,7 +3,7 @@
 [![Verify](https://github.com/jackh0006/X-Messenger/actions/workflows/test.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
 [![Strict](https://github.com/jackh0006/X-Messenger/actions/workflows/strict-boundary.yml/badge.svg)](https://github.com/jackh0006/X-Messenger/actions)
 ![Version](https://img.shields.io/github/v/release/jackh0006/X-Messenger?label=stable)
-![Android](https://img.shields.io/badge/Android-targetSdk%2037-green)
+![Android](https://img.shields.io/badge/Android-targetSdk%2036-green)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 ![Offline](https://img.shields.io/badge/offline-first-orange)
 
@@ -130,15 +130,26 @@ force `--phrase` for scripts).
 Settings, local users, fingerprint, QR scan — everything works with zero
 bars. Rebuild: `npm run android:sync && npm run android:apk` (debug only).
 Play upload is a signed `.aab` (current `versionCode`/`versionName`, see
-`android/app/build.gradle`, `targetSdk 37`). Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
+`android/app/build.gradle`, `targetSdk 36`, `minSdk 24` for Android 9+).
+GitHub ships arm64 + arm32 APKs; Play serves splits from the `.aab`.
+Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
 and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-policy.md](docs/privacy-policy.md).
+
+## Windows (portable, no admin)
+
+Windows 10 1809+ and 11 (`x64` + `arm64` ZIPs): unzip, ensure Node 20 LTS +
+`openssl` (Git for Windows) on `PATH`, double-click `X-Messenger-GUI.cmd`
+or run `x-messenger.cmd gui` (loopback `https://127.0.0.1:443`, fallback
+`8443`). Data in `%APPDATA%\x-messenger`. SmartScreen “Unknown publisher”
+on first run is expected for sideloads — verify `SHA256SUMS`, use the signed
+setup when published. Full steps: [`WINDOWS_GUIDE.md`](WINDOWS_GUIDE.md).
 
 ## Security design
 
 - `AES-256-GCM` via Web Crypto, `PBKDF2-HMAC-SHA256` 600,000 iterations,
   fresh 128-bit salt + 96-bit nonce per message, versioned `XM1` (v2 seals
-  with padded size buckets, v1 reads) + `XMessenger/2` context, strict
-  parsing, 8000-char cap (UI 900 for QR + counter, `>2900B`
+  with padded size buckets, v1 reads) + `XMessenger/1|2` context, strict
+  parsing, 8000-char / 16380-byte cap (UI 900 for QR + counter, `>2900B`
   suggests `.xmsg`).
 - Loopback HTTPS via a device-local CA (`gui --trust-ca` once,
   `gui --cert-info` to compare fingerprints); separate `--app` window,
@@ -175,7 +186,7 @@ same audited Go core as the terminal demo, running in-page as WebAssembly.
 | `docs/vps-private-mode.md` | Bedtime-story privacy: who sees what + daily safety rules |
 | `docs/privacy-policy.md` | Collects nothing; camera frames never leave device |
 | `docs/store-listing.md` | Paste-ready Play text + data safety |
-| `ANDROID_GUIDE.md` / `LINUX_GUIDE.md` / `LINUX_INSTALL.md` | Platform steps |
+| `ANDROID_GUIDE.md` / `LINUX_GUIDE.md` / `LINUX_INSTALL.md` / `WINDOWS_GUIDE.md` | Platform steps |
 | `PUBLISHING.md` / `PLAY_RELEASE.md` / `RELEASE-CONTENTS.md` | GitHub + Play checklists |
 
 ## Donate (no ads, no premium)
@@ -201,16 +212,29 @@ or message contents).
 
 Single source of truth: `package.json` (+ `core.js VERSION`,
 `android/app/build.gradle`, `packaging/debian/DEBIAN/control`,
-`server.js /api/info` — enforced by `test/crypto.test.js`).
+`server.js /api/info` dynamic — enforced by `test/crypto.test.js`).
 Check yours with `cipherlink version` and compare to the
 [stable release](https://github.com/jackh0006/X-Messenger/releases/latest).
 Each release ships:
 
 | File | What |
 | --- | --- |
-| `X-Messenger-<ver>-Linux-amd64.deb` | Ubuntu desktop app |
-| `X-Messenger-<ver>-Android-arm64.apk` | Android app (CAMERA-only) |
+| `X-Messenger-<ver>-Linux-amd64.deb` | Debian/Ubuntu desktop (amd64) |
+| `X-Messenger-<ver>-Linux-arm64.deb` | Debian/Ubuntu desktop (ARM64: Pi 4/5, ARM laptops) |
+| `X-Messenger-<ver>-Linux-armhf.deb` | Debian/Ubuntu desktop (ARM32: Pi 3/Zero 2) |
+| `X-Messenger-<ver>-Linux-amd64.tar.gz` | Portable Linux (Fedora/Arch/NixOS, no root) |
+| `X-Messenger-<ver>-Linux-arm64.tar.gz` | Portable Linux ARM64 |
+| `X-Messenger-<ver>-Windows-x64.zip` | Windows 10/11 portable (x64, no admin) — see `WINDOWS_GUIDE.md` |
+| `X-Messenger-<ver>-Windows-arm64.zip` | Windows on ARM portable |
+| `X-Messenger-<ver>-Android-arm64.apk` | Android arm64 (CAMERA-only, Android 7+/9+ tested) |
+| `X-Messenger-<ver>-Android-arm32.apk` | Android arm32 (armeabi-v7a, Android 9-era phones) |
+| `X-Messenger-<ver>-Android.aab` | Play upload bundle (signed, CAMERA-only) |
 | `X-Messenger-<ver>-SHA256SUMS.txt` | Hashes — verify before installing |
+
+Play/SmartScreen note: sideloaded APKs/ZIPs always warn (“Unknown app /
+publisher”) until Play-signed + reputation. The `.aab` (Play) and signed
+setup are the trusted paths; GitHub builds are byte-identical code with
+`SHA256SUMS` for verification. See `PLAY_RELEASE.md` + `WINDOWS_GUIDE.md`.
 
 ## Legal
 

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 (function (root) {
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const ITERATIONS = 600000;
   const MAX_TEXT_CHARS = 8000;
+  // Largest padded bucket is 16384 bytes; 4 bytes hold the length prefix.
+  const MAX_TEXT_BYTES = 16380;
   const MAX_PAYLOAD_CHARS = 32768;
+  const AAD_V1 = 'XMessenger/1';
+  const AAD_V2 = 'XMessenger/2';
   const encoder = new TextEncoder();
   // Never silently replace malformed UTF-8 in decrypted content.  A malformed
   // plaintext is an invalid transfer, not a message with substituted bytes.
@@ -31,7 +35,20 @@
       throw new Error('Unsupported transfer format.');
     }
   };
-  const randomBytes = (length) => crypto.getRandomValues(new Uint8Array(length));
+  const randomBytes = (length) => {
+    const c = (typeof crypto !== 'undefined' && crypto) || (root.crypto) || globalThis.crypto;
+    if (!c || typeof c.getRandomValues !== 'function') {
+      throw new Error('Secure random generator unavailable on this device/browser. Update WebView/browser and retry.');
+    }
+    return c.getRandomValues(new Uint8Array(length));
+  };
+  function subtle() {
+    const c = (typeof crypto !== 'undefined' && crypto) || root.crypto || globalThis.crypto;
+    if (!c || !c.subtle || typeof c.subtle.importKey !== 'function') {
+      throw new Error('WebCrypto unavailable: update Android System WebView/Chrome (v90+) or use a current browser.');
+    }
+    return c.subtle;
+  }
 
   function paddedPlaintext(text) {
     const plain = encoder.encode(text);
@@ -55,21 +72,24 @@
   }
 
   async function keyFor(phrase, salt, usages) {
-    const material = await crypto.subtle.importKey('raw', encoder.encode(phrase), 'PBKDF2', false, ['deriveKey']);
-    return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ITERATIONS }, material, { name: 'AES-GCM', length: 256 }, false, usages);
+    const material = await subtle().importKey('raw', encoder.encode(phrase), 'PBKDF2', false, ['deriveKey']);
+    return subtle().deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: ITERATIONS }, material, { name: 'AES-GCM', length: 256 }, false, usages);
   }
 
   async function encryptText(text, phrase) {
     if (typeof text !== 'string' || typeof phrase !== 'string') throw new TypeError('Text and phrase must be strings.');
     if (text.length === 0) throw new Error('Enter a message to seal.');
     if (text.length > MAX_TEXT_CHARS) throw new Error(`Message too long: keep it under ${MAX_TEXT_CHARS} characters; use a shorter message.`);
+    // Count bytes, not UTF-16 units: emoji/CJK can be 3-4 bytes per char and
+    // would otherwise pass the char cap but overflow the largest pad bucket.
+    if (encoder.encode(text).length > MAX_TEXT_BYTES) throw new Error(`Message too long in bytes: keep UTF-8 under ${MAX_TEXT_BYTES} bytes (shorten emoji/CJK or split the transfer).`);
     if (phrase.length === 0) throw new Error('A shared phrase is required.');
     const salt = randomBytes(16);
     const iv = randomBytes(12);
     const key = await keyFor(phrase, salt, ['encrypt']);
     const plain = paddedPlaintext(text);
     try {
-      const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode('XMessenger/2') }, key, plain));
+      const encrypted = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(AAD_V2) }, key, plain));
       return 'XM1.' + b64url(encoder.encode(JSON.stringify({ v: 2, kdf: 'PBKDF2-SHA256', i: ITERATIONS, s: b64url(salt), n: b64url(iv), c: b64url(encrypted) })));
     } finally {
       plain.fill(0);
@@ -97,7 +117,8 @@
     if (salt.length !== 16 || iv.length !== 12 || ciphertext.length === 0) throw new Error('Unsupported transfer format.');
     const key = await keyFor(phrase, salt, ['decrypt']);
     try {
-      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(`XMessenger/${data.v}`) }, key, ciphertext));
+      const aad = data.v === 2 ? AAD_V2 : AAD_V1;
+      const plain = new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(aad) }, key, ciphertext));
       try {
         return data.v === 2 ? unpadPlaintext(plain) : decoder.decode(plain);
       } finally {
@@ -109,6 +130,6 @@
       try { ciphertext.fill(0); salt.fill(0); iv.fill(0); } catch {}
     }
   }
-  root.XMessengerCrypto = { encryptText, decryptText, ITERATIONS, MAX_TEXT_CHARS, MAX_PAYLOAD_CHARS, VERSION };
+  root.XMessengerCrypto = { encryptText, decryptText, ITERATIONS, MAX_TEXT_CHARS, MAX_TEXT_BYTES, MAX_PAYLOAD_CHARS, VERSION };
   if (typeof module !== 'undefined') module.exports = root.XMessengerCrypto;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

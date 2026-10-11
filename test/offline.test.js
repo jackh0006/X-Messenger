@@ -118,3 +118,39 @@ test('build stamp proves which commit serves', () => {
   const gi = read('.gitignore');
   assert.ok(gi.includes('build-info.json'), 'stamp file must stay uncommitted');
 });
+
+test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
+  const gradle = read('android/app/build.gradle');
+  const vars = read('android/variables.gradle');
+  assert.ok(vars.includes('minSdkVersion = 24'), 'minSdk must stay 24 (Android 7+, covers 9)');
+  assert.ok(vars.includes('targetSdkVersion = 36'), 'targetSdk must be 36 stable (not 37 preview)');
+  assert.ok(vars.includes('compileSdkVersion = 36'), 'compileSdk must be 36 stable');
+  assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
+  assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
+  assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
+  assert.ok(gradle.includes('versionCode 12') && gradle.includes('versionName "1.2.0"'), 'android version must be 1.2.0/12');
+  const proguard = read('android/app/proguard-rules.pro');
+  assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
+});
+
+test('desktop is cross-platform: platform shim + per-arch demo + Windows track', () => {
+  assert.ok(fs.existsSync(path.join(root, 'lib', 'platform.js')), 'lib/platform.js must exist');
+  const plat = read('lib/platform.js');
+  assert.ok(plat.includes('APPDATA') && plat.includes('win32'), 'platform shim must handle Windows paths');
+  assert.ok(plat.includes('v2demoBinary'), 'per-OS/arch demo resolution must exist');
+  const cli = read('bin/cipherlink');
+  assert.ok(cli.includes('lib/platform') || cli.includes("require('../lib/platform')"), 'CLI must use the platform shim');
+  assert.ok(cli.includes('certutil') && cli.includes('-user'), 'Windows CA trust must use CurrentUser store');
+  assert.ok(!/process\.env\.HOME \|\| '\.'/.test(cli), 'CLI must not fall back to cwd for HOME on Windows');
+  assert.ok(fs.existsSync(path.join(root, 'WINDOWS_GUIDE.md')), 'WINDOWS_GUIDE.md must exist');
+  assert.ok(fs.existsSync(path.join(root, 'packaging', 'windows', 'x-messenger.cmd')), 'Windows launcher must exist');
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'build-windows.sh')), 'Windows builder must exist');
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'build-tarball.sh')), 'tarball builder must exist');
+});
+
+test('server serves WASM correctly and resolves paths on Windows', () => {
+  const srv = read('server.js');
+  assert.ok(srv.includes('.wasm') && srv.includes('application/wasm'), 'server must send application/wasm');
+  assert.ok(srv.includes('package.json') || !/version: '1\.1\.0'/.test(srv), 'server version must be dynamic (no hardcoded old version)');
+  assert.ok(srv.includes('lib/platform') || srv.includes('platform'), 'server must use the platform shim');
+});

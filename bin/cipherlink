@@ -4,6 +4,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const { webcrypto } = require('node:crypto');
+const plat = require('../lib/platform');
 
 global.crypto = global.crypto || webcrypto;
 const root = path.resolve(__dirname, '..');
@@ -46,10 +47,10 @@ If 443 is taken or needs privilege, you will be asked to choose another port.
 --vps --domain msg.example.com serves your domain with a Let's Encrypt
 cert (normal HTTPS; provider/DNS still see domain+IP+sizes, content stays XM1).
 See docs/vps-domain-cloudflare.md + docs/vps-private-mode.md. Port 1024-65535
-(443 needs capability: sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))).
+(443 needs elevation — Linux: setcap capability; Windows/macOS: run once as admin or use 8443).
 Browser warning: first run shows a cert warning because the loopback cert is
 signed by your device-local CA. Compare fingerprints, then run once:
-  x-messenger gui --trust-ca     (trusts local CA in NSS + system store)
+  x-messenger gui --trust-ca     (trusts local CA in OS/browser store)
   x-messenger gui --cert-info    (shows CA + leaf fingerprints)
 
 The shared phrase is requested privately. --phrase is for non-interactive
@@ -105,8 +106,7 @@ async function runCrypto() {
 }
 
 function profileStore() {
-  const dir = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
-  return { dir, file: path.join(dir, 'recipients.json') };
+  return { dir: plat.appDataDir(), file: plat.recipientsFile() };
 }
 function profiles() {
   const command = args[0]; const { dir, file } = profileStore();
@@ -114,10 +114,10 @@ function profiles() {
     const [rawName, rawNote = ''] = args.slice(1); if (!rawName) { console.error('Provide a local profile name.'); process.exitCode = 2; return; }
     const name = String(rawName).slice(0, 40).trim(); const note = String(rawNote).slice(0, 120).trim();
     if (!name) { console.error('Provide a local profile name.'); process.exitCode = 2; return; }
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); let list = []; try { const st = fs.statSync(file); if (st.size > 200 * 1024) throw new Error('Local store too large.'); list = JSON.parse(fs.readFileSync(file, 'utf8')); if (!Array.isArray(list)) list = []; } catch (e) { if (e.message === 'Local store too large.') throw e; }
+    plat.safeMkdir(dir, 0o700); let list = []; try { const st = fs.statSync(file); if (st.size > 200 * 1024) throw new Error('Local store too large.'); list = JSON.parse(fs.readFileSync(file, 'utf8')); if (!Array.isArray(list)) list = []; } catch (e) { if (e.message === 'Local store too large.') throw e; }
     if (list.length >= 100) { console.error('Too many local recipients (max 100).'); process.exitCode = 2; return; }
     if (list.some(p => String(p.name).toLowerCase() === name.toLowerCase())) { console.error(`Local recipient "${name}" already exists.`); process.exitCode = 2; return; }
-    list.push({ name, note, createdAt: new Date().toISOString() }); fs.writeFileSync(file, JSON.stringify(list, null, 2), { mode: 0o600 }); console.log(`Saved local recipient: ${name}`); return;
+    list.push({ name, note, createdAt: new Date().toISOString() }); fs.writeFileSync(file, JSON.stringify(list, null, 2), { mode: 0o600 }); try { plat.safeChmod(file, 0o600); } catch {} console.log(`Saved local recipient: ${name}`); return;
   }
   try { const list = JSON.parse(fs.readFileSync(file, 'utf8')); if (!list.length) console.log('No local recipients saved.'); else list.forEach((p, i) => console.log(`${i + 1}. ${p.name}${p.note ? ` — ${p.note}` : ''}`)); } catch { console.log('No local recipients saved.'); }
 }
@@ -127,11 +127,11 @@ function dataCommand() {
   if (action === 'export') {
     const destination = path.resolve(args[2] || 'x-messenger-cli-backup.json'); let recipients = [];
     try { recipients = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-    fs.writeFileSync(destination, JSON.stringify({ format: 'x-messenger-cli-backup-v1', exportedAt: new Date().toISOString(), recipients }, null, 2), { mode: 0o600 }); console.log(`Exported local CLI data to: ${destination}`); return;
+    fs.writeFileSync(destination, JSON.stringify({ format: 'x-messenger-cli-backup-v1', exportedAt: new Date().toISOString(), recipients }, null, 2), { mode: 0o600 }); try { plat.safeChmod(destination, 0o600); } catch {} console.log(`Exported local CLI data to: ${destination}`); return;
   }
   if (action === 'import') {
     const source = args[2]; if (!source) { console.error('Provide a backup file to import.'); process.exitCode = 2; return; }
-    try { const st = fs.statSync(path.resolve(source)); if (st.size > 1024 * 1024) throw new Error('Backup too large (max 1MB).'); const backup = JSON.parse(fs.readFileSync(path.resolve(source), 'utf8')); if (backup.format !== 'x-messenger-cli-backup-v1' || !Array.isArray(backup.recipients)) throw new Error('Invalid X Messenger CLI backup.'); if (backup.recipients.length > 100) throw new Error('Backup has too many recipients (max 100).'); const recipients = backup.recipients.map(item => ({ name: String(item.name || '').slice(0, 40).trim(), note: String(item.note || '').slice(0, 120).trim(), createdAt: String(item.createdAt || new Date().toISOString()) })).filter(item => item.name); fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.writeFileSync(file, JSON.stringify(recipients, null, 2), { mode: 0o600 }); console.log(`Restored ${recipients.length} local recipient(s).`); } catch (error) { console.error(`X Messenger: ${error.message}`); process.exitCode = 1; } return;
+    try { const st = fs.statSync(path.resolve(source)); if (st.size > 1024 * 1024) throw new Error('Backup too large (max 1MB).'); const backup = JSON.parse(fs.readFileSync(path.resolve(source), 'utf8')); if (backup.format !== 'x-messenger-cli-backup-v1' || !Array.isArray(backup.recipients)) throw new Error('Invalid X Messenger CLI backup.'); if (backup.recipients.length > 100) throw new Error('Backup has too many recipients (max 100).'); const recipients = backup.recipients.map(item => ({ name: String(item.name || '').slice(0, 40).trim(), note: String(item.note || '').slice(0, 120).trim(), createdAt: String(item.createdAt || new Date().toISOString()) })).filter(item => item.name); plat.safeMkdir(dir, 0o700); fs.writeFileSync(file, JSON.stringify(recipients, null, 2), { mode: 0o600 }); try { plat.safeChmod(file, 0o600); } catch {} console.log(`Restored ${recipients.length} local recipient(s).`); } catch (error) { console.error(`X Messenger: ${error.message}`); process.exitCode = 1; } return;
   }
   if (action === 'delete') {
     if (!args.includes('--yes')) { console.error('Refusing to delete local CLI data without --yes.'); process.exitCode = 2; return; }
@@ -151,24 +151,31 @@ function lanIp() {
   return '127.0.0.1';
 }
 function guiPrefsFile() {
-  const base = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
-  return path.join(base, 'gui.json');
+  return plat.guiPrefsFile();
 }
 function readGuiPrefs() {
   try { return JSON.parse(fs.readFileSync(guiPrefsFile(), 'utf8')); } catch { return {}; }
 }
 function writeGuiPrefs(p) {
   const f = guiPrefsFile();
-  fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 });
+  plat.safeMkdir(path.dirname(f), 0o700);
   fs.writeFileSync(f, JSON.stringify(p, null, 2), { mode: 0o600 });
+  try { plat.safeChmod(f, 0o600); } catch {}
 }
 function caPaths(dataDir) {
   return { caKey: path.join(dataDir, 'local-ca-key.pem'), caCert: path.join(dataDir, 'local-ca-cert.pem') };
 }
 function makeCa(caKey, caCert) {
-  // Device-local CA. Private key never leaves this device (0600).
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:3072', '-sha384', '-nodes', '-keyout', caKey, '-out', caCert, '-days', '3650', '-subj', '/CN=X Messenger Local CA', '-addext', 'basicConstraints=critical,CA:true', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], { stdio: 'ignore' });
-  fs.chmodSync(caKey, 0o600); fs.chmodSync(caCert, 0o600);
+  // Device-local CA. Private key never leaves this device (0600 on POSIX).
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:3072', '-sha384', '-nodes', '-keyout', caKey, '-out', caCert, '-days', '3650', '-subj', '/CN=X Messenger Local CA', '-addext', 'basicConstraints=critical,CA:true', '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], { stdio: 'ignore' });
+  } catch (e) {
+    const hint = plat.IS_WINDOWS
+      ? 'openssl not found. Install Git for Windows (includes openssl.exe) or use Windows OpenSSL, ensure it is on PATH, then retry.'
+      : 'openssl not found. Install openssl via your package manager, then retry.';
+    throw new Error(hint);
+  }
+  plat.safeChmod(caKey, 0o600); plat.safeChmod(caCert, 0o600);
 }
 function makeLeaf(key, cert, caKey, caCert, sanIp) {
   const san = sanIp && sanIp !== '127.0.0.1' ? `DNS:localhost,IP:127.0.0.1,IP:${sanIp}` : 'DNS:localhost,IP:127.0.0.1';
@@ -179,7 +186,7 @@ function makeLeaf(key, cert, caKey, caCert, sanIp) {
     execFileSync('openssl', ['req', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', csr, '-subj', '/CN=localhost', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
     fs.writeFileSync(ext, `basicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=${san}\n`);
     execFileSync('openssl', ['x509', '-req', '-in', csr, '-CA', caCert, '-CAkey', caKey, '-CAcreateserial', '-out', cert, '-days', '825', '-sha256', '-extfile', ext], { stdio: 'ignore' });
-    fs.chmodSync(key, 0o600); fs.chmodSync(cert, 0o600);
+    plat.safeChmod(key, 0o600); plat.safeChmod(cert, 0o600);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -195,7 +202,7 @@ function makeCert(key, cert, sanIp) {
   // Legacy self-signed path (kept for reference only; openGui now uses CA-signed leaves).
   const san = sanIp && sanIp !== '127.0.0.1' ? `DNS:localhost,IP:127.0.0.1,IP:${sanIp}` : 'DNS:localhost,IP:127.0.0.1';
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', key, '-out', cert, '-days', '825', '-subj', '/CN=localhost', '-addext', `subjectAltName=${san}`], { stdio: 'ignore' });
-  fs.chmodSync(key, 0o600); fs.chmodSync(cert, 0o600);
+  plat.safeChmod(key, 0o600); plat.safeChmod(cert, 0o600);
 }
 function ensureCaLeaf(dataDir, sanIp, wantRegen) {
   const { caKey, caCert } = caPaths(dataDir);
@@ -223,21 +230,47 @@ function trustCa(dataDir) {
   if (!fs.existsSync(caCert)) { console.error('No local CA yet. Run: x-messenger gui (creates CA), then: x-messenger gui --trust-ca'); process.exitCode = 2; return; }
   const ca = new X509Certificate(fs.readFileSync(caCert));
   console.log(`Local CA: ${caCert}\nSHA256: ${ca.fingerprint256}\nValid: ${ca.validFrom} → ${ca.validTo}\nCompare this fingerprint with the one shown in the app TLS screen before trusting.`);
-  const nssDb = path.join(process.env.HOME || '.', '.pki', 'nssdb');
+  if (plat.IS_WINDOWS) {
+    try {
+      execFileSync('certutil', ['-user', '-addstore', 'Root', caCert], { stdio: 'ignore' });
+      console.log('Trusted in Windows CurrentUser Root store. Restart Edge/Chrome.');
+    } catch {
+      console.log('Windows trust skipped (certutil failed). Double-click the CA file → Install Certificate → Current User → Trusted Root.');
+    }
+    console.log('Remove anytime: certutil -user -delstore Root "X Messenger Local CA"');
+    console.log('After trusting, reopen: x-messenger gui (warning gone, stays loopback-only HTTPS).');
+    return;
+  }
+  if (plat.IS_MAC) {
+    console.log('macOS trust (one-time):');
+    console.log(`  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${caCert}"`);
+    console.log('After trusting, reopen: x-messenger gui (warning gone, stays loopback-only HTTPS).');
+    console.log('Remove anytime: sudo security delete-certificate -c "X Messenger Local CA"');
+    return;
+  }
+  const nssDb = plat.nssDbDir();
   try {
-    fs.mkdirSync(nssDb, { recursive: true, mode: 0o700 });
+    plat.safeMkdir(nssDb, 0o700);
     execFileSync('certutil', ['-d', `sql:${nssDb}`, '-A', '-t', 'C,,', '-n', 'X Messenger Local CA', '-i', caCert], { stdio: 'ignore' });
     console.log('Trusted in Chrome/Firefox NSS store ( ~/.pki/nssdb ). Restart Chrome.');
   } catch {
     console.log('NSS trust skipped (certutil missing). Chrome will still warn until NSS trust is added.');
   }
-  console.log('System store (one-time, your sudo):');
-  console.log(`  sudo install -m 644 ${caCert} /usr/local/share/ca-certificates/x-messenger-local-ca.crt && sudo update-ca-certificates`);
+  console.log(plat.systemTrustHint(caCert));
   console.log('After trusting, reopen: x-messenger gui (warning gone, stays loopback-only HTTPS).');
   console.log('Remove anytime: x-messenger gui --untrust-ca');
 }
 function untrustCa() {
-  const nssDb = path.join(process.env.HOME || '.', '.pki', 'nssdb');
+  if (plat.IS_WINDOWS) {
+    try { execFileSync('certutil', ['-user', '-delstore', 'Root', 'X Messenger Local CA'], { stdio: 'ignore' }); console.log('Removed from Windows CurrentUser Root store.'); } catch { console.log('Windows entry not present (or certutil failed).'); }
+    return;
+  }
+  if (plat.IS_MAC) {
+    console.log('macOS removal (your sudo):');
+    console.log('  sudo security delete-certificate -c "X Messenger Local CA"');
+    return;
+  }
+  const nssDb = plat.nssDbDir();
   try { execFileSync('certutil', ['-d', `sql:${nssDb}`, '-D', '-n', 'X Messenger Local CA'], { stdio: 'ignore' }); console.log('Removed from NSS store.'); } catch { console.log('NSS entry not present (or certutil missing).'); }
   console.log('System store removal (your sudo):');
   console.log('  sudo rm -f /usr/local/share/ca-certificates/x-messenger-local-ca.crt && sudo update-ca-certificates --fresh');
@@ -269,8 +302,8 @@ function runSetup() {
     const modeA = await ask('Mode (1=this device, 2=lan, 3=vps)', '1');
     let prefs = readGuiPrefs();
     const p = Number.parseInt(portA, 10);
-    if (!Number.isInteger(p) || p < 1 || p > 65535) { console.error('Port must be 1-65535 (use 1024+ unless 443 with capability).'); process.exitCode = 2; rl.close(); return; }
-    if (p < 1024) console.warn('Privileged port: needs setcap/capability or a 443→8443 proxy. See docs/vps-domain-cloudflare.md.');
+    if (!Number.isInteger(p) || p < 1 || p > 65535) { console.error('Port must be 1-65535 (use 1024+ unless 443 with elevation).'); process.exitCode = 2; rl.close(); return; }
+    if (p < 1024) console.warn(`Privileged port: ${plat.privilegedPortHint()} See docs/vps-domain-cloudflare.md.`);
     prefs.port = p;
     if (modeA === '3') {
       const d = (await ask('Domain (e.g. msg.example.com)', prefs.domain || '')).toLowerCase();
@@ -278,8 +311,8 @@ function runSetup() {
       prefs.bind = 'vps'; prefs.domain = d;
       console.log('VPS guide: point A/AAAA msg→server IP (Cloudflare grey-cloud/DNS-only for E2E), then:');
       console.log(`  sudo certbot certonly --standalone -d ${d}   # or --nginx / --dns-cloudflare`);
-      console.log(`  sudo install -m 600 /etc/letsencrypt/live/${d}/privkey.pem ~/.local/share/x-messenger/tls/vps-${d}-privkey.pem`);
-      console.log(`  sudo install -m 644 /etc/letsencrypt/live/${d}/fullchain.pem ~/.local/share/x-messenger/tls/vps-${d}-fullchain.pem`);
+      console.log(`  TLS dir: ${plat.tlsDir()}`);
+      console.log(`  copy privkey.pem → vps-${d}-privkey.pem and fullchain.pem → vps-${d}-fullchain.pem in that dir (0600 on Linux/macOS).`);
       console.log('Provider/DNS/network still see domain+IP+sizes; XM1 content stays end-to-end. Never proxy orange-cloud if you want E2E.');
     } else if (modeA === '2') {
       prefs.bind = 'lan';
@@ -305,16 +338,13 @@ function promptPort(question, def) {
 }
 function openSeparateWindow(endpoint, certPath) {
   // Separate app window, never a browser tab and never the file protocol.
-  // Uses Chrome --app with an isolated profile so tabs, extensions and
+  // Uses Chrome/Edge --app with an isolated profile so tabs, extensions and
   // browsing history are not shared with the user's normal browser.
-  const base = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
-  const profile = path.join(base, 'chrome-app-profile');
-  try { fs.mkdirSync(profile, { recursive: true, mode: 0o700 }); } catch {}
+  const profile = plat.chromeProfileDir();
+  try { plat.safeMkdir(profile, 0o700); } catch {}
   let fp = '';
   try { fp = new (require('node:crypto').X509Certificate)(fs.readFileSync(certPath)).fingerprint256; } catch {}
-  const candidates = [];
-  if (process.env.BROWSER) candidates.push(process.env.BROWSER);
-  candidates.push('google-chrome', 'chromium', 'chromium-browser');
+  const candidates = plat.browserCandidates();
   const tryNext = (i) => {
     if (i >= candidates.length) {
       console.log(`X Messenger ready at ${endpoint} [separate window unavailable].`);
@@ -323,7 +353,7 @@ function openSeparateWindow(endpoint, certPath) {
       return;
     }
     const browser = candidates[i];
-    const child = spawn(browser, [`--app=${endpoint}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore' });
+    const child = spawn(browser, [`--app=${endpoint}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore', shell: plat.IS_WINDOWS && !path.isAbsolute(browser) });
     child.on('error', () => tryNext(i + 1));
     child.unref();
   };
@@ -342,9 +372,8 @@ async function openGui() {
   const wantVps = args.includes('--vps');
   const wantDomain = valueAfter('--domain');
   const wantRegen = args.includes('--regen-cert');
-  const base0 = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
-  const dataDir0 = path.join(base0, 'tls');
-  if (args.includes('--trust-ca')) { fs.mkdirSync(dataDir0, { recursive: true, mode: 0o700 }); trustCa(dataDir0); return; }
+  const dataDir0 = plat.tlsDir();
+  if (args.includes('--trust-ca')) { plat.safeMkdir(dataDir0, 0o700); trustCa(dataDir0); return; }
   if (args.includes('--untrust-ca')) { untrustCa(); return; }
   if (!fs.existsSync(guiPrefsFile()) && wantPort === undefined && !wantLan && !wantLoopback && !wantVps && !args.includes('--cert-info')) {
     console.log('First run: no gui.json yet. Starting with safe defaults (loopback 443, HTTPS, separate window).');
@@ -352,8 +381,8 @@ async function openGui() {
   let prefs = readGuiPrefs();
   if (wantPort !== undefined) {
     const p = Number.parseInt(wantPort, 10);
-    if (!Number.isInteger(p) || p < 1 || p > 65535) { console.error('Port must be 1-65535 (1024+ recommended; 443 needs capability).'); process.exitCode = 2; return; }
-    if (p < 1024) console.warn('Privileged port: needs setcap/capability or proxy. See docs/vps-domain-cloudflare.md.');
+    if (!Number.isInteger(p) || p < 1 || p > 65535) { console.error('Port must be 1-65535 (1024+ recommended; 443 needs elevation).'); process.exitCode = 2; return; }
+    if (p < 1024) console.warn(`Privileged port: ${plat.privilegedPortHint()} See docs/vps-domain-cloudflare.md.`);
     prefs.port = p;
   }
   if (wantLan) prefs.bind = 'lan';
@@ -368,9 +397,8 @@ async function openGui() {
   if (prefs.bind === 'vps' && !validDomain(prefs.domain)) { console.error('VPS mode needs --domain msg.example.com. Run: x-messenger setup'); process.exitCode = 2; return; }
   const bind = prefs.bind === 'vps' ? 'vps' : prefs.bind === 'lan' ? 'lan' : 'loopback';
   let port = prefs.port || 443;
-  const base = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share'), 'x-messenger');
-  const dataDir = path.join(base, 'tls');
-  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const dataDir = plat.tlsDir();
+  plat.safeMkdir(dataDir, 0o700);
   const ip = lanIp();
   // --cert-info never needs a port; show CA + leaf fingerprints even if the GUI port is busy.
   if (args.includes('--cert-info')) {
@@ -395,7 +423,7 @@ async function openGui() {
   const hostProbe = bind === 'loopback' ? '127.0.0.1' : '0.0.0.0';
   let probe = await isPortFree(port, bind === 'loopback' ? '127.0.0.1' : undefined);
   if (!probe.ok && process.stdin.isTTY && wantPort === undefined) {
-    console.warn(`Port ${port} unavailable (${probe.code}; 443 needs: sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))).`);
+    console.warn(`Port ${port} unavailable (${probe.code}; ${plat.privilegedPortHint()}).`);
     const answer = await promptPort('Choose another port (1024-65535)', 8443);
     const p = Number.parseInt(answer, 10);
     if (!Number.isInteger(p) || p < 1024 || p > 65535) { console.error('Port must be 1024-65535.'); process.exitCode = 2; return; }
@@ -406,7 +434,7 @@ async function openGui() {
     if (!probe.ok) { console.error(`Port ${port} also unavailable (${probe.code}). Free it and retry.`); process.exitCode = 1; return; }
   } else if (!probe.ok) {
     console.error(`Port ${port} unavailable (${probe.code}). Retry with: x-messenger gui --port 8443`);
-    if (port < 1024) console.error('Privileged port: sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))');
+    if (port < 1024) console.error(`Privileged port: ${plat.privilegedPortHint()}`);
     process.exitCode = 1;
     return;
   }
@@ -446,12 +474,14 @@ else if (args[0] === 'profile' || args[0] === 'profiles') profiles();
 else if (args[0] === 'data') dataCommand();
 else if (args[0] === 'encrypt' || args[0] === 'decrypt') runCrypto();
 else if (args[0] === 'v2demo') {
-  const demo = path.join(root, 'core', 'v2demo-linux-amd64');
-  if (!fs.existsSync(demo)) {
-    console.error('v2 demo binary missing. Rebuild it from source: cd core && go build -trimpath -o v2demo-linux-amd64 ./cmd/xm2demo (needs Go >= 1.24).');
+  const demo = plat.v2demoBinary(root);
+  const legacy = path.join(root, 'core', 'v2demo-linux-amd64');
+  const target = fs.existsSync(demo) ? demo : legacy;
+  if (!fs.existsSync(target)) {
+    console.error('v2 demo binary missing for this OS/arch. Rebuild it from source: cd core && go build -trimpath -o <platform-binary> ./cmd/xm2demo (needs Go >= 1.24).');
     process.exitCode = 1;
   } else {
-    const child = spawn(demo, args.slice(1), { stdio: 'inherit' });
+    const child = spawn(target, args.slice(1), { stdio: 'inherit' });
     child.on('exit', (code) => { process.exitCode = code || 0; });
   }
 }

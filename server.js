@@ -2,14 +2,20 @@
 const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
+const plat = require('./lib/platform');
 
 // The app is served from the prebuilt, offline bundle. This also makes the
-// Debian installation read-only and usable by an unprivileged desktop user.
+// installed packages read-only and usable by an unprivileged desktop user.
 const root = fs.existsSync(path.join(__dirname, 'www', 'index.html')) ? path.join(__dirname, 'www') : __dirname;
+function appVersion() {
+  try {
+    return require(path.join(__dirname, 'package.json')).version || '0.0.0-unknown';
+  } catch { return '0.0.0-unknown'; }
+}
+const APP_VERSION = appVersion();
 function loadGuiPrefs() {
   try {
-    const home = process.env.XDG_DATA_HOME || path.join(process.env.HOME || '.', '.local', 'share');
-    const raw = fs.readFileSync(path.join(home, 'x-messenger', 'gui.json'), 'utf8');
+    const raw = fs.readFileSync(plat.guiPrefsFile(), 'utf8');
     const p = JSON.parse(raw);
     return p && typeof p === 'object' ? p : {};
   } catch { return {}; }
@@ -39,11 +45,19 @@ if (bindMode === 'vps' && !validDomain(domain)) {
 const DEFAULT_PORT = 443;
 const requestedPort = Number.parseInt(process.env.X_MESSENGER_PORT || process.env.PORT || prefs.port || String(DEFAULT_PORT), 10);
 const firstPort = Number.isInteger(requestedPort) && requestedPort >= 1 && requestedPort <= 65535 ? requestedPort : DEFAULT_PORT;
-if (firstPort < 1024) console.warn(`Port ${firstPort} is privileged and needs root/capability (setcap or systemd AmbientCapabilities) or a 443→8443 proxy.`);
+if (firstPort < 1024) console.warn(`Port ${firstPort} is privileged and needs elevation/capability (${plat.privilegedPortHint()}) or a 443→8443 proxy.`);
 const host = bindMode === 'loopback' ? '127.0.0.1' : '0.0.0.0';
 const advertiseHost = bindMode === 'vps' ? domain : bindMode === 'lan' ? (process.env.X_MESSENGER_LAN_IP || prefs.lanIp || 'LAN-IP') : '127.0.0.1';
 const maxAttempts = 20;
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const types = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.wasm': 'application/wasm',
+  '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json; charset=utf-8',
+};
 const keyPath = process.env.X_MESSENGER_TLS_KEY;
 const certPath = process.env.X_MESSENGER_TLS_CERT;
 if (!keyPath || !certPath) throw new Error('X Messenger requires its local TLS certificate. Launch it through x-messenger gui.');
@@ -64,11 +78,11 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
       const certPem = fs.readFileSync(certPath, 'utf8');
       const cert = new (require('node:crypto').X509Certificate)(certPem);
       const info = {
-        version: '1.1.0', bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
+        version: APP_VERSION, bind: bindMode, host: advertiseHost, port, domain: bindMode === 'vps' ? domain : undefined,
         build: readBuildStamp(),
         tls: { subject: cert.subject, issuer: cert.issuer, validFrom: cert.validFrom, validTo: cert.validTo, fingerprint256: cert.fingerprint256, san: cert.subjectAltName },
       };
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       res.end(JSON.stringify(info));
     } catch { res.writeHead(500); res.end('TLS info unavailable'); }
     return;
@@ -76,8 +90,13 @@ const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.read
   const allowed = new Set(['/', '/index.html', '/style.css', '/app.js', '/core.js', '/service-worker.js', '/manifest.webmanifest', '/assets/icon.svg', '/vendor/qrcode.min.js', '/vendor/jsQR.js', '/vendor/xm2.wasm', '/vendor/wasm_exec.js']);
   if (!allowed.has(normalized)) { res.writeHead(404); res.end('Not found'); return; }
   const file = normalized === '/' ? '/index.html' : normalized;
+  // Resolve safely on POSIX and Windows (case-insensitive drive + separators).
   const target = path.resolve(root, `.${file}`);
-  if (!target.startsWith(root + path.sep) && target !== path.join(root, 'index.html')) {
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  const inside = plat.IS_WINDOWS
+    ? target.toLowerCase().startsWith(rootWithSep.toLowerCase()) || target.toLowerCase() === root.toLowerCase() + path.sep + 'index.html'
+    : (target.startsWith(rootWithSep) || target === path.join(root, 'index.html'));
+  if (!inside) {
     res.writeHead(404); res.end('Not found'); return;
   }
   let stat;
@@ -111,9 +130,10 @@ server.on('error', (error) => {
 server.on('listening', () => {
   const endpoint = bindMode === 'vps' ? `https://${domain}${port === 443 ? '' : `:${port}`}` : bindMode === 'lan' ? `https://${advertiseHost}:${port}` : `https://${host}:${port}`;
   if (process.env.X_MESSENGER_ENDPOINT_FILE) {
-    fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint, { mode: 0o600 });
+    try { fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint, { mode: 0o600 }); }
+    catch { fs.writeFileSync(process.env.X_MESSENGER_ENDPOINT_FILE, endpoint); }
   }
-  console.log(`X Messenger 1.1.0 running at ${endpoint} [bind=${bindMode}]`);
+  console.log(`X Messenger ${APP_VERSION} running at ${endpoint} [bind=${bindMode}]`);
   if (bindMode === 'lan') console.warn('LAN mode: observable encrypted TLS on this network (IP/port/sizes visible). Compare cert fingerprint in person.');
   if (bindMode === 'vps') console.warn('VPS mode: provider/DNS/network see domain+IP+sizes; message content stays XM1 end-to-end. Keep Cloudflare grey-cloud (DNS-only) for E2E.');
 });

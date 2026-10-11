@@ -7,13 +7,44 @@ android {
         applicationId "com.jackh0006.xmessenger"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 11
-        versionName "1.1.0"
+        // v1.2.0: base 12. Play multi-APK offsets are applied in splits
+        // (arm64/x86_64 higher than arm32/x86) so old arm32 devices stay installable.
+        versionCode 12
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            // arm32 (armeabi-v7a) for Android 9-era phones + arm64 for new;
+            // x86_64/x86 keep emulators and rare Intel tablets working.
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // GitHub APKs: per-ABI splits so arm32 phones get a small working APK.
+    // Play AAB (.aab) stays a single artifact; Play serves splits itself.
+    // Splits MUST stay off for bundle tasks (AGP fails with multiple
+    // shrunk-resources files otherwise — see issuetracker 402800800).
+    def isBundleTask = gradle.startParameter.taskNames.any { it.toLowerCase().contains('bundle') }
+    splits {
+        abi {
+            enable !isBundleTask
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            universalApk true
+        }
+    }
+    // Play multi-APK version-code offsets (must stay in this order).
+    project.ext.versionCodes = ['armeabi-v7a': 1, 'arm64-v8a': 2, 'x86': 3, 'x86_64': 4]
+    android.applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            def baseCode = defaultConfig.versionCode
+            if (abi != null) {
+                output.versionCodeOverride = baseCode * 10 + (project.ext.versionCodes.get(abi, 0))
+            }
         }
     }
     signingConfigs {
@@ -29,9 +60,23 @@ android {
     buildTypes {
         release {
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            // Signed release when env keystore is present (Play/AAB + GitHub APKs).
+            // Falls back to debug keys ONLY for local `assembleDebug` testing —
+            // never upload a debug-signed artifact to Play (Play Protect warning).
+            signingConfig System.getenv('X_MESSENGER_STORE_FILE') ? signingConfigs.release : signingConfigs.debug
         }
+        debug {
+            // Keep debuggable builds installable on Android 9+ without extra flags.
+            debuggable true
+        }
+    }
+    bundle {
+        // Keep all ABIs + English-first languages in the Play bundle; Play strips per device.
+        language { enableSplit = true }
+        density { enableSplit = true }
+        abi { enableSplit = true }
     }
 }
 
