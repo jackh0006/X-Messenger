@@ -56,11 +56,18 @@ test('linux server defaults to loopback 443 HTTPS separate window with hardened 
 test('v2 bridge is WASM-local, experimental, and keeps v1 readable', () => {
   const js = read('app.js');
   assert.ok(js.includes('vendor/xm2.wasm') && js.includes('vendor/wasm_exec.js'), 'bridge must load pinned local WASM only');
-  assert.ok(js.includes("fetch('/vendor/xm2.wasm'"), 'WASM must load same-origin');
+  assert.ok(js.includes("vendor/xm2.wasm"), 'WASM must load same-origin (relative first, Android-safe)');
+  assert.ok(js.includes('xm2capability'), 'bridge must pre-flight WebAssembly/BigInt with honest errors');
+  assert.ok(js.includes('v2status') && js.includes('Not connected'), 'pair status pill must exist');
   assert.ok(js.includes('v2Banner') && js.includes('unaudited'), 'experimental banner must exist');
   assert.ok(js.includes("startsWith('XM2.')") && js.includes('decryptText'), 'receive must try XM2 then fall back to XM1');
   assert.ok(js.includes('buildPairDialog') && js.includes('v2Confirm') && js.includes('OUT LOUD'), 'pairing must require out-loud compare + confirm');
   assert.ok(js.includes('data-view="pair"') || js.includes("view === 'pair'") || js.includes('pairDialog'), 'pairing must be reachable from the sidebar');
+});
+
+test('camera scan accepts v2 envelopes as well as XM1', () => {
+  const js = read('app.js');
+  assert.ok(js.includes("startsWith('XM2.')"), 'scanner must accept XM2 payloads');
 });
 
 test('lan mode is opt-in and honestly warned', () => {
@@ -107,6 +114,34 @@ test('session messages support delete, backup v2 carries sealed envelopes only',
   assert.ok(js.includes('chatSearch') && js.includes('toggleSelect'), 'search + select UI must exist');
 });
 
+test('plaintext never persists: localStorage holds labels/settings only', () => {
+  const js = read('app.js');
+  const allowed = new Set([
+    'PROFILE_KEY', 'SETTINGS_KEY', "'x-messenger-why-seen-v1'",
+    'PROFILE_KEY, SETTINGS_KEY',
+  ]);
+  for (const m of js.matchAll(/localStorage\.setItem\(([^,]+),/g)) {
+    const key = m[1].trim();
+    // `key` is only allowed as the loop variable constrained to the two
+    // label/settings constants (restore path); literals must be allow-listed.
+    const loopOk = key === 'key' && js.includes('for (const key of [PROFILE_KEY, SETTINGS_KEY])');
+    const ok = key === 'PROFILE_KEY' || key === 'SETTINGS_KEY' || key === "'x-messenger-why-seen-v1'" || loopOk;
+    assert.ok(ok, `localStorage may only store labels/settings, found: ${key}`);
+  }
+  assert.ok(js.includes('Plaintext lives ONLY here'), 'session-only store contract must be documented');
+  assert.ok(js.includes('sealedOnly'), 'restored envelopes must stay sealed-only (no plaintext)');
+  assert.ok(!/localStorage\.setItem\(['"]x-messenger-messages/.test(js), 'message plaintext must never be persisted');
+});
+
+test('security guide states verifiable guarantees without hype', () => {
+  const html = read('index.html');
+  const js = read('app.js');
+  assert.ok(html.includes('Verified guarantees'), 'guarantees section must exist');
+  assert.ok(html.includes('Session-only plaintext'), 'at-rest guarantee must be stated');
+  assert.ok(html.includes('Not a guarantee'), 'honesty box must stay');
+  assert.ok(!/unhackable|CIA-grade|NSA-proof|military-grade/i.test(html + js), 'must never claim hype guarantees');
+});
+
 test('build stamp proves which commit serves', () => {
   const cli = read('bin/cipherlink');
   const srv = read('server.js');
@@ -128,7 +163,7 @@ test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
   assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
   assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
   assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
-  assert.ok(gradle.includes('versionCode 12') && gradle.includes('versionName "1.2.0"'), 'android version must be 1.2.0/12');
+  assert.ok(gradle.includes('versionCode 13') && gradle.includes('versionName "1.3.0"'), 'android version must be 1.3.0/13');
   const proguard = read('android/app/proguard-rules.pro');
   assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
 });

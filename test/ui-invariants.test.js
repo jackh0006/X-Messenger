@@ -40,7 +40,7 @@ test("hamburger-only mobile nav with one shared handler (no bottom bar)", () => 
   assert.ok(!html.includes("mobileTabs"), "bottom bar must be gone");
   assert.ok(!css.includes("#mobileTabs"), "bottom bar css must be gone");
   assert.ok(html.includes('id="menuBtn"'), "hamburger missing");
-  for (const v of ["saved", "receive", "pair", "settings"]) {
+  for (const v of ["saved", "receive", "users", "pair", "settings"]) {
     assert.ok(html.includes(`data-view="${v}"`), v + " missing");
   }
   assert.ok(js.includes("function startChat"), "unified startChat missing");
@@ -56,4 +56,24 @@ test("telegram drawer exists with full sidebar equipment", () => {
   assert.ok(html.includes('id="scrim"'), "scrim missing");
   assert.ok(js.includes("drawer-open"), "drawer logic missing");
   assert.ok(css.includes("body.drawer-open .sidebar"), "drawer css missing");
+});
+
+test("views render dedicated pages: receive list, users, pair status", () => {
+  const js = read("app.js");
+  const html = read("index.html");
+  const css = read("style.css");
+  assert.ok(js.includes("currentView"), "view state missing");
+  assert.ok(js.includes("renderUsersPane") && js.includes("deleteProfile"), "users page missing");
+  assert.ok(js.includes("renderPairPane") && js.includes("v2ConnPillPane"), "pair status page missing");
+  assert.ok(js.includes("Recent received"), "receive list header missing");
+  assert.ok(js.includes("v2Unpair") || js.includes("v2unpair"), "unpair action missing");
+  assert.ok(html.includes('data-view="users"'), "users nav missing");
+  assert.ok(css.includes(".conn-pill") && css.includes(".user-card"), "view styles missing");
+});
+
+test("small screens never overflow horizontally (360px class)", () => {
+  const css = read("style.css");
+  assert.ok(css.includes("overflow-x:clip") || css.includes("overflow-x: clip"), "page x-clip missing");
+  assert.ok(css.includes("68vw"), "QR canvas must scale to viewport width");
+  assert.ok(css.includes("text-overflow:ellipsis"), "title ellipsis missing");
 });

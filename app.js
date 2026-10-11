@@ -43,6 +43,9 @@ function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minut
 // Lock, close, background-clear, or Clear chat wipes it. Nothing persists.
 const chatStore = { list: [], seq: 0 };
 let chatFilter = '', selectMode = false, starFilter = false, replyTarget = null;
+// Current main-pane view: 'saved' | 'receive' | 'users' | 'pair' | 'settings'.
+// Receive shows incoming only; users/pair render dedicated pages.
+let currentView = 'saved';
 const selectedIds = new Set();
 function chatEntry(dir, text, opts = {}) {
   const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0, replyTo: opts.replyTo || '', starred: false, fwd: !!opts.fwd };
@@ -76,12 +79,33 @@ function wipeSession() {
 function renderChat() {
   const box = $('#messages'); if (!box) return;
   box.replaceChildren();
+  if (currentView === 'users') { renderUsersPane(box); updateSelectBar(); return; }
+  if (currentView === 'pair') { renderPairPane(box); updateSelectBar(); return; }
+  const incomingOnly = currentView === 'receive';
+  if (incomingOnly) {
+    const head = document.createElement('div'); head.className = 'view-head';
+    const n = chatStore.list.filter(m => m.dir === 'incoming').length;
+    const t = document.createElement('strong'); t.textContent = `Recent received (${n})`;
+    const s = document.createElement('span'); s.textContent = 'Decrypted here, session only. Deleting history removes all of them from this device.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const scan = document.createElement('button'); scan.className = 'primary-large view-cta'; scan.textContent = '⌗ Scan / paste new';
+    scan.onclick = () => openModal('#receiveDialog');
+    const del = document.createElement('button'); del.className = 'ghost-button'; del.textContent = 'Delete history';
+    del.onclick = () => clearChat();
+    row.append(scan, del); head.append(t, s, row); box.append(head);
+  }
   const q = chatFilter.trim().toLowerCase();
   let items = q ? chatStore.list.filter(m => (m.text || '').toLowerCase().includes(q)) : [...chatStore.list];
+  if (incomingOnly) items = items.filter(m => m.dir === 'incoming');
   if (starFilter) items = items.filter(m => m.starred);
   if (!chatStore.list.length) {
     const w = document.createElement('div'); w.className = 'welcome-card';
     w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
+    box.append(w); updateSelectBar(); return;
+  }
+  if (incomingOnly && !items.length) {
+    const w = document.createElement('div'); w.className = 'welcome-card';
+    w.innerHTML = '<div class="welcome-icon">⌗</div><h2>No received messages yet.</h2><p>Scan a QR or paste ciphertext to receive. Nothing here is uploaded anywhere.</p>';
     box.append(w); updateSelectBar(); return;
   }
   if (q || starFilter) {
@@ -276,7 +300,7 @@ function bindMsgPress(article, bubble, id) {
   bubble.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(timer); openMsgMenu(id, e.clientX, e.clientY); });
 }
 function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
-function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Scan an encrypted QR or paste ciphertext'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; if (view === 'receive') openModal('#receiveDialog'); else if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); openModal('#pairDialog'); } else closeDrawer(); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Recent received + scan new'], users: ['▤', 'Users', 'Local contacts on this device'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; currentView = view; if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); v2status(); } renderChat(); closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
@@ -318,7 +342,7 @@ try {
   }
 } catch {};
 for (const [name, address] of donations) { const row = document.createElement('button'); row.className = 'donate-row'; row.innerHTML = `<strong>${name}</strong><code>${address}</code><span>Copy</span>`; row.onclick = async () => { try { await navigator.clipboard.writeText(address); clearClipboardLater(); row.querySelector('span').textContent = 'Copied'; setTimeout(() => row.querySelector('span').textContent = 'Copy', 1200); } catch {} }; $('#donateList').append(row); }
-async function scanLoop() { const video = $('#scanner'), canvas = document.createElement('canvas'), context = canvas.getContext('2d', { willReadFrequently: true }); const tick = () => { if (!scanning) return; if (video.readyState >= 2) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; context.drawImage(video, 0, 0); const found = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' }); if (found?.data?.startsWith('XM1.')) { $('#payloadInput').value = found.data; $('#receiveStatus').textContent = 'QR received. Enter the phrase to decrypt.'; stopScanner(); return; } } scanTimer = requestAnimationFrame(tick); }; tick(); }
+async function scanLoop() { const video = $('#scanner'), canvas = document.createElement('canvas'), context = canvas.getContext('2d', { willReadFrequently: true }); const tick = () => { if (!scanning) return; if (video.readyState >= 2) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; context.drawImage(video, 0, 0); const found = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' }); if (found?.data?.startsWith('XM1.') || found?.data?.startsWith('XM2.')) { $('#payloadInput').value = found.data; $('#receiveStatus').textContent = 'QR received. Enter the phrase to decrypt (v2 envelopes need a paired contact).'; stopScanner(); return; } } scanTimer = requestAnimationFrame(tick); }; tick(); }
 async function startScanner() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
 function stopScanner() { scanning = false; cancelAnimationFrame(scanTimer); const stream = $('#scanner').srcObject; if (stream) stream.getTracks().forEach(t => t.stop()); $('#scanner').srcObject = null; }
 $('#startCamera').onclick = startScanner;
@@ -386,7 +410,81 @@ document.body.append(profileDialog); profileDialog.querySelector('[data-profile-
 function profiles() { try { const saved = JSON.parse(localStorage.getItem(PROFILE_KEY)); return Array.isArray(saved) ? saved : []; } catch { return []; } }
 function saveProfiles(items) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(items)); } catch {} }
 function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase() || '•'; }
-function activateProfile(profile) { activeProfileId = profile.id; $('#viewIcon').textContent = initials(profile.name); $('#viewTitle').textContent = profile.name; $('#viewSubtitle').textContent = profile.note || 'Local offline recipient'; $('#messageInput').placeholder = `Write an encrypted message for ${profile.name}…`; document.querySelectorAll('[data-view]').forEach(button => button.classList.remove('active')); renderProfiles(); $('#messageInput').focus(); }
+function activateProfile(profile) { activeProfileId = profile.id; $('#viewIcon').textContent = initials(profile.name); $('#viewTitle').textContent = profile.name; $('#viewSubtitle').textContent = profile.note || 'Local offline recipient'; $('#messageInput').placeholder = `Write an encrypted message for ${profile.name}…`; document.querySelectorAll('[data-view]').forEach(button => button.classList.remove('active')); currentView = 'saved'; renderProfiles(); renderChat(); try { $('#messageInput').focus(); } catch {} }
+function deleteProfile(id) {
+  const items = profiles().filter(p => p.id !== id);
+  saveProfiles(items);
+  if (activeProfileId === id) { activeProfileId = null; $('#messageInput').placeholder = 'Write a private message…'; }
+  renderProfiles(); renderChat();
+}
+// Users page: every local contact with Send text + Delete. Labels only —
+// no accounts, nothing uploaded.
+function renderUsersPane(box) {
+  const head = document.createElement('div'); head.className = 'view-head';
+  const t = document.createElement('strong'); t.textContent = `Users (${profiles().length}/100)`;
+  const s = document.createElement('span'); s.textContent = 'Local contacts on this device. Deleting the app data removes all of them.';
+  const add = document.createElement('button'); add.className = 'primary-large view-cta'; add.textContent = '＋ Add user';
+  add.onclick = () => { try { profileDialog.showModal(); } catch {} };
+  head.append(t, s, add); box.append(head);
+  const list = profiles();
+  if (!list.length) {
+    const w = document.createElement('div'); w.className = 'welcome-card';
+    w.innerHTML = '<div class="welcome-icon">▤</div><h2>No users yet.</h2><p>Add a local contact to address sealed messages. Names never leave this device.</p>';
+    box.append(w); return;
+  }
+  const wrap = document.createElement('div'); wrap.className = 'user-list';
+  for (const p of list) {
+    const card = document.createElement('div'); card.className = 'user-card';
+    const av = document.createElement('span'); av.className = 'avatar amber'; av.textContent = initials(p.name);
+    const copy = document.createElement('div'); copy.className = 'user-copy';
+    const nm = document.createElement('strong'); nm.textContent = p.name;
+    const nt = document.createElement('small'); nt.textContent = p.note || 'Tap Send to write an encrypted message';
+    copy.append(nm, nt);
+    const btns = document.createElement('div'); btns.className = 'user-actions';
+    const send = document.createElement('button'); send.className = 'primary-large view-cta'; send.textContent = 'Send text →';
+    send.onclick = () => { setView('saved'); activateProfile(p); };
+    const del = document.createElement('button'); del.className = 'ghost-button'; del.textContent = 'Delete';
+    del.onclick = () => { if (confirm(`Delete local contact "${p.name}" from this device?`)) deleteProfile(p.id); };
+    btns.append(send, del); card.append(av, copy, btns); wrap.append(card);
+  }
+  box.append(wrap);
+}
+// Pair v2 page: connection status + paired contact + actions.
+function renderPairPane(box) {
+  const head = document.createElement('div'); head.className = 'view-head';
+  const t = document.createElement('strong'); t.textContent = 'Pair v2 contact';
+  const pill = document.createElement('div'); pill.className = 'conn-pill'; pill.id = 'v2ConnPillPane';
+  const s = document.createElement('span');
+  if (v2paired) {
+    pill.textContent = '● Connected'; pill.dataset.on = '1';
+    s.textContent = 'Post-quantum session ready — new seals use XM2. Old XM1 messages still open.';
+  } else {
+    pill.textContent = '○ Not connected'; pill.dataset.on = '';
+    const cap = xm2capability();
+    s.textContent = cap.ok
+      ? 'No v2 contact paired. Pair face to face (both phones swap codes + compare the fingerprint out loud). XM1 transfers work without pairing.'
+      : cap.reason;
+  }
+  head.append(t, pill, s);
+  const row = document.createElement('div'); row.className = 'view-actions';
+  const open = document.createElement('button'); open.className = 'primary-large view-cta'; open.textContent = v2paired ? '◈ Pairing steps' : '◈ Start pairing';
+  open.onclick = () => { buildPairDialog(); v2status(); openModal('#pairDialog'); };
+  row.append(open);
+  if (v2paired) {
+    const fp = document.createElement('div'); fp.className = 'fingerprint';
+    const lr = document.createElement('div'); lr.className = 'label-row';
+    const lab = document.createElement('span'); lab.textContent = 'PAIRED SESSION FINGERPRINT';
+    lr.append(lab);
+    const code = document.createElement('code'); code.textContent = v2fpText || '—';
+    fp.append(lr, code); head.append(fp);
+    const send = document.createElement('button'); send.className = 'primary-large view-cta'; send.textContent = 'Send via v2 →';
+    send.onclick = () => { setView('saved'); try { $('#messageInput').focus(); } catch {} };
+    const unp = document.createElement('button'); unp.className = 'ghost-button'; unp.textContent = 'Unpair';
+    unp.onclick = () => { v2unpair(); renderChat(); };
+    row.append(send, unp);
+  }
+  head.append(row); box.append(head);
+}
 function renderProfiles() { recipientList.replaceChildren(); const saved = profiles(); recipientHeading.style.display = saved.length ? '' : 'none'; saved.forEach(profile => { const button = document.createElement('button'); button.className = `thread${profile.id === activeProfileId ? ' active' : ''}`; button.innerHTML = `<span class="avatar blue">${initials(profile.name)}</span><span class="thread-copy"><strong></strong><small></small></span>`; button.querySelector('strong').textContent = profile.name; button.querySelector('small').textContent = profile.note || 'Tap to start chat'; button.onclick = () => activateProfile(profile); recipientList.append(button); }); }
 $('#saveProfile').onclick = () => { const name = $('#profileName').value.trim().slice(0, 40), note = $('#profileNote').value.trim().slice(0, 120); if (!name) { $('#profileName').setCustomValidity('Give this local profile a name.'); $('#profileName').reportValidity(); return; } const saved = profiles(); if (saved.length >= 100) { $('#profileName').setCustomValidity('Too many local recipients (max 100). Delete one first.'); $('#profileName').reportValidity(); return; } if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) { $('#profileName').setCustomValidity('That name already exists locally.'); $('#profileName').reportValidity(); return; } const profile = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, name, note }; saved.push(profile); saveProfiles(saved); renderProfiles(); profileDialog.close(); $('#profileName').value = ''; $('#profileNote').value = ''; activateProfile(profile); };
 $('#newTransfer').onclick = startChat;
@@ -491,26 +589,87 @@ document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click'
 // terminal demo, running in-page as WebAssembly. New seals default to XM2
 // when a v2 contact is paired; XM1 envelopes always still open (read both,
 // write v2). Session-only: handles die with the page; nothing persists.
-let xm2p = null, v2send = null, v2recv = null, v2paired = false;
+let xm2p = null, v2send = null, v2recv = null, v2paired = false, v2fpText = '';
+// Capability pre-flight: the Go WASM bridge needs WebAssembly + BigInt.
+// Old system WebViews (e.g. un-updated Android 9) fail here — fail closed
+// with an honest, actionable message instead of "bridge failed to start".
+function xm2capability() {
+  if (typeof WebAssembly === 'undefined' || typeof WebAssembly.instantiate !== 'function') {
+    return { ok: false, reason: 'This device browser has no WebAssembly. Update Android System WebView (Play Store), then retry. XM1 QR transfers work fine without v2.' };
+  }
+  if (typeof BigInt === 'undefined') {
+    return { ok: false, reason: 'This device browser is too old for the v2 engine (needs BigInt). Update Android System WebView, then retry. XM1 QR transfers work fine without v2.' };
+  }
+  return { ok: true };
+}
 function xm2load() {
   if (xm2p) return xm2p;
   xm2p = (async () => {
+    const cap = xm2capability();
+    if (!cap.ok) throw new Error(cap.reason);
     if (typeof window.xm2 !== 'undefined') return window.xm2;
     await new Promise((resolve, reject) => {
       const s = document.createElement('script');
+      // Relative URL: works under https://127.0.0.1, file-less Linux GUI,
+      // and Capacitor (capacitor://localhost) alike. Absolute '/vendor/…'
+      // breaks on Android, so it is only a fallback in the fetch below.
       s.src = 'vendor/wasm_exec.js';
       s.onload = resolve;
-      s.onerror = () => reject(new Error('wasm_exec.js missing — rebuild the bundle'));
+      s.onerror = () => reject(new Error('v2 engine file missing (wasm_exec.js) — reinstall the app from the signed release, then retry.'));
       document.head.append(s);
     });
+    if (typeof Go === 'undefined') throw new Error('v2 engine starter missing — reinstall the app from the signed release, then retry.');
     const go = new Go();
-    const bin = await (await fetch('/vendor/xm2.wasm', { cache: 'no-store' })).arrayBuffer();
-    const mod = await WebAssembly.instantiate(bin, go.importObject);
+    // Same-origin WASM bytes. Try document-relative first (Android-safe),
+    // then root-absolute (desktop server). Either may 404 on a broken bundle.
+    let bin = null, lastErr = null;
+    for (const url of ['vendor/xm2.wasm', '/vendor/xm2.wasm']) {
+      try {
+        const resp = await Promise.race([
+          fetch(url, { cache: 'no-store' }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000)),
+        ]);
+        if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+        bin = await resp.arrayBuffer();
+        break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!bin) throw new Error(`v2 engine bytes unreachable (${(lastErr && lastErr.message) || 'fetch failed'}) — reinstall the app, then retry. XM1 transfers unaffected.`);
+    let mod;
+    try {
+      mod = await WebAssembly.instantiate(bin, go.importObject);
+    } catch (e) {
+      throw new Error(`v2 engine failed to start on this device (${e.message || 'WebAssembly error'}). Likely cause: old WebView or low memory — update Android System WebView and close other apps, then retry. XM1 QR transfers work fine without v2.`);
+    }
     go.run(mod.instance);
-    if (typeof window.xm2 === 'undefined') throw new Error('v2 bridge failed to start');
+    if (typeof window.xm2 === 'undefined') throw new Error('v2 bridge failed to start (engine ran but exposed no bridge) — reinstall the app, then retry.');
     return window.xm2;
   })().catch(e => { xm2p = null; throw e; });
   return xm2p;
+}
+// Pair status pill: Connected (green) vs Not connected (grey). Refreshed
+// whenever the pair view opens and after pairing/unpairing.
+function v2status() {
+  try {
+    const pill = document.getElementById('v2ConnPill');
+    if (pill) {
+      pill.textContent = v2paired ? '● Connected' : '○ Not connected';
+      pill.dataset.on = v2paired ? '1' : '';
+    }
+    const pane = document.getElementById('v2ConnPillPane');
+    if (pane) {
+      pane.textContent = v2paired ? '● Connected' : '○ Not connected';
+      pane.dataset.on = v2paired ? '1' : '';
+    }
+    const nav = document.querySelector('.thread[data-view="pair"] .thread-copy small');
+    if (nav) nav.textContent = v2paired ? 'Connected — post-quantum ready' : 'Post-quantum, face to face';
+  } catch {}
+}
+function v2unpair() {
+  v2send = null; v2recv = null; v2paired = false; v2fpText = '';
+  try { window._v2me = null; window._v2peer = null; window._v2ready = null; } catch {}
+  v2banner(false); v2status();
+  try { if (currentView === 'pair') renderChat(); } catch {}
 }
 async function xm2call(name, obj) {
   const bridge = await xm2load();
@@ -603,6 +762,7 @@ async function v2pairFp() {
     for (const b of blobs) { cat.set(b, o); o += b.length; }
     const fp = await xm2call('fingerprint', { a: _b64e(cat.slice(0, Math.ceil(cat.length / 2))), b: _b64e(cat.slice(Math.ceil(cat.length / 2))) });
     $('#v2Fingerprint').textContent = fp.hex.replace(/(.{8})/g, '$1 ').trim();
+    try { v2fpText = document.getElementById('v2Fingerprint').textContent; } catch {}
     window._v2ready = { kLo, kHi, ctMe: peer.ctMe, ctPeer: ctPeer.ct };
     say('Step 3/4 done. Compare the fingerprint OUT LOUD, tick confirm, then finish.');
   } catch (e) { say(`Pairing failed: ${e.message}`); }
@@ -623,7 +783,7 @@ async function v2pairFinish() {
     const send = await xm2call('sender', { chain: iAmLo ? root.chainLoHi : root.chainHiLo, epoch: 0, dir: iAmLo ? 'lo-hi' : 'hi-lo', counter: 0 });
     const recv = await xm2call('receiver', { chain: iAmLo ? root.chainHiLo : root.chainLoHi, epoch: 0, dir: iAmLo ? 'hi-lo' : 'lo-hi' });
     v2send = send.handle; v2recv = recv.handle; v2paired = true;
-    v2banner(true);
+    v2banner(true); v2status();
     say('Paired ✓ — new seals use XM2 post-quantum crypto. Old XM1 messages still open.');
   } catch (e) { say(`Pairing failed: ${e.message}`); }
 }
@@ -634,6 +794,7 @@ function buildPairDialog() {
   d.className = 'modal'; d.id = 'pairDialog';
   d.innerHTML = '<button class="modal-close" data-close>×</button><div class="modal-content">'
     + '<div class="modal-kicker">V2 PAIRING — FACE TO FACE ONLY</div>'
+    + '<div class="conn-pill" id="v2ConnPill" data-on="">○ Not connected</div>'
     + '<h2>Pair a post-quantum contact</h2>'
     + '<p>Both phones generate hybrid keys, swap codes by camera, and compare the fingerprint out loud. Experimental crypto — unaudited.</p>'
     + '<div class="qr-wrap"><canvas id="v2MyQr"></canvas></div>'
@@ -646,11 +807,14 @@ function buildPairDialog() {
     + '<button class="primary-large" id="v2Step3">3 · Compare fingerprint <span>→</span></button>'
     + '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input id="v2Confirm" type="checkbox" style="width:auto"> We read the SAME fingerprint out loud</label>'
     + '<button class="primary-large" id="v2Step4">4 · Finish pairing <span>→</span></button>'
+    + '<button class="ghost-button" id="v2Unpair">Unpair this contact</button>'
     + '<p id="v2PairStatus" class="receive-status"></p></div>';
   document.body.append(d);
   d.querySelector('[data-close]').onclick = () => d.close();
+  v2status();
   d.querySelector('#v2Step1').onclick = v2pair;
   d.querySelector('#v2Step2').onclick = v2pairContinue;
   d.querySelector('#v2Step3').onclick = v2pairFp;
   d.querySelector('#v2Step4').onclick = v2pairFinish;
+  d.querySelector('#v2Unpair').onclick = () => { v2unpair(); const s = d.querySelector('#v2PairStatus'); if (s) s.textContent = 'Unpaired on this device. Pair again to seal with XM2.'; };
 }
