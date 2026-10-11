@@ -30,7 +30,7 @@ execFileSync(path.join(root, 'node_modules/.bin/browserify'), ['node_modules/qrc
 try {
   const goBin = process.env.XM2_GO_BIN || 'go';
   execFileSync(goBin, ['version'], { stdio: 'ignore' });
-  execFileSync(goBin, ['build', '-trimpath', '-o', 'www/vendor/xm2.wasm', './cmd/xm2w'],
+  execFileSync(goBin, ['build', '-trimpath', '-o', path.join(output, 'vendor', 'xm2.wasm'), './cmd/xm2w'],
     { cwd: path.join(root, 'core'), stdio: 'inherit', env: { ...process.env, GOOS: 'js', GOARCH: 'wasm' } });
   const out = execFileSync(goBin, ['env', 'GOROOT'], { encoding: 'utf8' }).trim();
   for (const candidate of [path.join(out, 'lib', 'wasm', 'wasm_exec.js'), path.join(out, 'misc', 'wasm', 'wasm_exec.js')]) {
