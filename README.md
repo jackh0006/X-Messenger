@@ -8,11 +8,16 @@
 ![Linux](https://img.shields.io/badge/Ubuntu-amd64-E95420?logo=ubuntu&logoColor=white)
 
 **Offline-first secret courier.** Move small, high-value secrets between trusted
-people with no accounts, no servers, and no internet — over QR codes, NFC, or
+people with no accounts, no servers, and no internet — over QR codes or
 one encrypted file you carry yourself. One shared Flutter UI on Android and
 Ubuntu, one Rust security core, MIT licensed, fully open source.
 
-> **Status: EXPERIMENTAL PREVIEW.** The shared UI shell builds and installs on
+> **Stable builds live in [Releases](https://github.com/jackh0006/X-Messenger/releases)
+> (v1.2.0+): QR codes plus encrypted text/`.xmsg` file couriers, CAMERA-only
+> Android, loopback-only desktop GUI. No NFC, no Bluetooth — by design, so
+> there is no radio attack surface to audit.
+>
+> **Status of this page: EXPERIMENTAL PREVIEW.** The shared UI shell builds and installs on
 > both platforms, but there is deliberately **no usable vault, pairing, or
 > transfer yet**. Do not store seed phrases, private keys, or crown-jewel
 > material in this build. It must not be called unhackable, military-grade, or
@@ -23,7 +28,7 @@ Ubuntu, one Rust security core, MIT licensed, fully open source.
 
 Two devices never touch a network. The sender's Rust core encrypts the secret
 into opaque AEAD ciphertext packets; the untrusted carrier — animated QR
-frames, an NFC tap, or a `.courier` file on USB — moves only ciphertext.
+frames or a `.courier` file on USB — moves only ciphertext.
 The receiver's core rejects anything malformed, replayed, or tampered and
 fails closed with a neutral message.
 
@@ -47,7 +52,7 @@ preview.
 | Property | Signal | Telegram | WhatsApp | X Messenger (goal) |
 | --- | --- | --- | --- | --- |
 | Identity | Phone number required | Account ID required | Phone number required | **Keys only, no number** (planned) |
-| Transport | Central servers | Central servers | Central servers | **No servers; QR / NFC / file only** |
+| Transport | Central servers | Central servers | Central servers | **No servers; QR / file only (no NFC, no Bluetooth)** |
 | Works with zero internet | No | No | No | **Yes, by construction** |
 | Default chats E2E encrypted | Yes (Signal protocol) | **No** (cloud chats; optional Secret Chats) | Yes (Signal protocol) | Planned AEAD sessions |
 | Custom crypto protocol | No (published Signal protocol) | Yes (custom MTProto) | No (Signal protocol) | **No — reviewed primitives only** (rule R2) |
@@ -68,7 +73,7 @@ prove its offline boundary in CI — `scripts/strict-check.sh` plus the
 | Strict no-network build | ✅ CI gate + release APK verified clean | Reproducible signed builds, SBOM |
 | Encrypted vault | ❌ Placeholder screen | Rust core, Argon2id, duress slots |
 | Pairing + sessions | ❌ | Reviewed session library, safety phrase |
-| QR / NFC / file transport | ❌ | Strict parsers + fuzzing |
+| QR / file transport | ❌ | Strict parsers + fuzzing |
 | Independent audit | ❌ | Required before any stable release |
 
 ## Try the preview

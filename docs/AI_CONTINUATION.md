@@ -57,7 +57,7 @@ or choose an unreviewed security dependency.
 1. Foundation: strict checks green, shared UI builds on Android + Linux.
 2. Vault: Rust-only encrypted vault, formats + known-answer + negative tests.
 3. Pairing and protocol: reviewed session library only, document exactly.
-4. Transport: strict parsers + fuzz targets for file, QR, NFC. Ciphertext only.
+4. Transport: strict parsers + fuzz targets for file, QR. Ciphertext only. (No NFC/Bluetooth couriers — none exist.)
 5. Bridge and UI: narrow Rust commands to UI. UI never keeps raw keys.
 6. Hardening and packaging: reproducible builds, signed artifacts, SBOM.
 7. Audit and beta: independent review, fix all findings, then scoped beta.

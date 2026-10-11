@@ -9,7 +9,7 @@ No stable release until every box is checked with evidence.
 - [ ] `flutter analyze` and `flutter test` pass.
 - [ ] Rust workspace builds from clean checkout, no `target/` committed.
 - [ ] Crypto has known-answer tests (official vectors) + property tests.
-- [ ] Every parser (QR, NFC, file, contact card) fuzzed, 24h clean.
+- [ ] Every parser (QR, file, contact card) fuzzed, 24h clean.
 - [ ] Negative tests: tampered, replayed, truncated, reordered, duplicated,
       oversized packets rejected without crash.
 - [ ] Dependency review: licences compatible, `cargo-audit` clean, SBOM saved.
