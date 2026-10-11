@@ -19,5 +19,6 @@ With uncompromised endpoints, a strong unique phrase exchanged separately, and c
 - Weak, reused, guessed, or observed phrases.
 - Metadata: VPS/LAN observers see domain/IP/port/sizes/timing. Cloudflare orange-cloud proxy sees TLS plaintext — use grey-cloud (DNS-only) for end-to-end.
 - Traffic analysis, identity authentication, forward secrecy, post-compromise security, or secure deletion beyond 1-pass overwrite.
+- The v2 post-quantum channel (P-384 + ML-KEM-1024) is experimental and unaudited: its handshake composition has a Tamarin skeleton, not a proof. Do not rely on it for high-risk use until the external audit lands.
 
 Before high-risk use, move the protocol to a small audited native Rust/libsodium core with OS-backed storage, X25519/Ed25519 identities, an audited asynchronous double ratchet, signed reproducible builds, and an external audit. Do not claim “unhackable,” agency resistance, or certification without evidence.

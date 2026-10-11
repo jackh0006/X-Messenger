@@ -25,6 +25,7 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 - [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
 - [Android (stays offline)](#android-stays-offline)
 - [Security design](#security-design)
+- [v2 post-quantum channel (experimental)](#v2-post-quantum-channel-experimental)
 - [Docs map](#docs-map)
 - [Donate](#donate-no-ads-no-premium)
 - [Versions](#versions)
@@ -149,6 +150,21 @@ and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-polic
   message *content* stays XM1 end-to-end when the phrase stays off the server.
 
 Read [SECURITY.md](SECURITY.md) before high-risk use.
+
+## v2 post-quantum channel (experimental)
+
+New seals can use hybrid post-quantum crypto instead of a shared phrase:
+ECDH P-384 + ML-KEM-1024 (CNSA 2.0 suite), HKDF-SHA-384 chains, AES-256-GCM,
+same audited Go core as the terminal demo, running in-page as WebAssembly.
+
+- **Pair:** sidebar → Pair v2 contact. Swap QR codes face to face (4 steps),
+  compare the fingerprint **out loud**, tick confirm. No pairing, no v2 seals.
+- **Send:** paired sessions seal `XM2.` by default. **Read:** `XM2` opens via
+  session, `XM1` always still opens — read both, write v2.
+- **Honest limits:** experimental and **unaudited** (banner stays in the UI);
+  128 MiB in-page key stretching, session-only vault, no hardware backing in
+  the browser. Spec: [`docs/PROTOCOL-v2.md`](docs/PROTOCOL-v2.md); terminal
+  loop: `x-messenger v2demo`; audit-gated roadmap in `model/README.md`.
 
 ## Docs map
 
