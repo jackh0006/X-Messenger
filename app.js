@@ -1011,7 +1011,10 @@ async function v2pair() {
     const code = JSON.stringify({ v: 2, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: window._v2me.half });
     await QRCode.toCanvas($('#v2MyQr'), code, { width: 220, margin: 2, errorCorrectionLevel: 'M' });
     try { document.getElementById('v2MyCodeText').value = code; } catch {}
-    say('Step 1/4 — let them scan this code, or copy the text below to their device. Then paste THEIR code and continue.');
+    // v2 codes are ~2.3kB (P-384 97B + ML-KEM-1024 1568B + half). Large for
+    // QR-M: if scan fails, use Copy + paste (text path) or .xmsg file.
+    if (code.length > 2000) say('Step 1/4 — code is large for cameras (~2.3k chars). If scan fails, use Copy + paste on the other device. Then paste THEIR code and continue.');
+    else say('Step 1/4 — let them scan this code, or copy the text below to their device. Then paste THEIR code and continue.');
   } catch (e) { say(`Pairing failed: ${e.message}`); }
 }
 async function v2pairContinue() {
@@ -1023,12 +1026,19 @@ async function v2pairContinue() {
     if (!me) throw new Error('Generate your code first (step 1).');
     say('Step 2/4 — encapsulating to their key…');
     const enc = await xm2call('encaps', { handle: me.handle, peerMkem: peer.mlkem });
-    const myBundle = _b64d(me.ecdh).join(',') + '|' + _b64d(me.mlkem).join(',');
-    const peerBundle = _b64d(peer.ecdh).join(',') + '|' + _b64d(peer.mlkem).join(',');
-    const iAmLo = myBundle <= peerBundle;
-    // Meeting secret S = halves XORed (order-independent).
+    // Canonical lo/hi: byte-lexicographic over raw identity (ecdh||mlkem),
+    // mirrors Go bytes.Compare in OrderFP. Both sides agree.
+    const myId = (() => { const a = _b64d(me.ecdh), b = _b64d(me.mlkem), o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; })();
+    const peerId = (() => { const a = _b64d(peer.ecdh), b = _b64d(peer.mlkem), o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; })();
+    const iAmLo = _cmp(myId, peerId) <= 0;
+    // Meeting secret S32: halves are 16B each (128-bit). Go RootKey needs
+    // 32B S = (sA^sB)||(sA^sB) — same construction as handshake_test.go.
+    // v1.4.0 sent 16B here -> every pairing failed at deriveRoot with
+    // "core: bad handshake input length". Fixed in v1.4.1.
     const a = _b64d(me.half), b = _b64d(peer.half);
-    const sBytes = a.map((x, i) => x ^ b[i % b.length]);
+    if (a.length !== 16 || b.length !== 16) throw new Error('That is not an X Messenger v2 code (bad half length).');
+    const sBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) sBytes[i] = a[i % 16] ^ b[i % 16];
     // Canonical transcript: ordered pubs + S + my ct (theirs arrives next).
     const loE = iAmLo ? me.ecdh : peer.ecdh, hiE = iAmLo ? peer.ecdh : me.ecdh;
     const loM = iAmLo ? me.mlkem : peer.mlkem, hiM = iAmLo ? peer.mlkem : me.mlkem;
@@ -1050,10 +1060,14 @@ async function v2pairFp() {
     const kPeer = await xm2call('decaps', { handle: me.handle, ct: ctPeer.ct });
     const kLo = peer.iAmLo ? peer.kMe : kPeer.k;
     const kHi = peer.iAmLo ? kPeer.k : peer.kMe;
-    // Fingerprint input: ordered raw transcript incl. BOTH cts (H2 fix).
-    const parts = [peer.loE, peer.hiE, peer.loM, peer.hiM, _b64e(peer.sBytes), peer.ctMe, ctPeer.ct];
+    // Fingerprint transcript per spec §2.4 (ordered, no sorting):
+    // A_lo||A_hi||MK_lo||MK_hi||S32||ct_lo||ct_hi, where ct_lo is the lo
+    // side's ciphertext. v1.4.0 sorted blobs lexicographically -> cross-impl
+    // mismatch. Fixed in v1.4.1.
+    const ctLo = peer.iAmLo ? peer.ctMe : ctPeer.ct;
+    const ctHi = peer.iAmLo ? ctPeer.ct : peer.ctMe;
+    const parts = [peer.loE, peer.hiE, peer.loM, peer.hiM, _b64e(peer.sBytes), ctLo, ctHi];
     const blobs = parts.map(p => _b64d(p));
-    blobs.sort((x, y) => _cmp(x, y));
     const total = blobs.reduce((n, b) => n + b.length, 0);
     const cat = new Uint8Array(total);
     let o = 0;

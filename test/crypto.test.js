@@ -16,15 +16,15 @@ test('rejects a wrong phrase and uses the configured work factor', async () => {
   assert.equal(ITERATIONS, 600000);
 });
 
-test('keeps version fixed at 1.4.0 everywhere', () => {
-  assert.equal(VERSION, '1.4.0');
-  assert.equal(require('../package.json').version, '1.4.0');
+test('keeps version fixed at 1.4.1 everywhere', () => {
+  assert.equal(VERSION, '1.4.1');
+  assert.equal(require('../package.json').version, '1.4.1');
   const fs = require('node:fs');
   const gradle = fs.readFileSync(require('node:path').join(__dirname, '..', 'android', 'app', 'build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionName "1.4.0"'), 'android versionName must be 1.4.0');
-  assert.ok(gradle.includes('versionCode 15'), 'android versionCode must be 12');
+  assert.ok(gradle.includes('versionName "1.4.1"'), 'android versionName must be 1.4.1');
+  assert.ok(gradle.includes('versionCode 16'), 'android versionCode must be 16');
   const control = fs.readFileSync(require('node:path').join(__dirname, '..', 'packaging', 'debian', 'DEBIAN', 'control'), 'utf8');
-  assert.ok(control.includes('Version: 1.4.0'), 'deb control must be 1.4.0');
+  assert.ok(control.includes('Version: 1.4.1'), 'deb control must be 1.4.1');
 });
 
 test('round-trips unicode, emoji and punctuation', async () => {

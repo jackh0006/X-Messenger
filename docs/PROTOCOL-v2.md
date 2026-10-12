@@ -35,21 +35,27 @@ never negotiation.
 1. Each device generates: P-384 keypair `(a, A)`, ML-KEM-1024 keypair
    `(mk, MK)`, using `crypto/rand`.
 2. Exchange over QR (camera, not radio): `A`, `MK`, and a 128-bit half
-   secret (`sA` / `sB`). Meeting secret `S = sA ⊕ sB` — two QR scans
+   secret (`sA` / `sB`, 16 bytes each). Meeting secret `S32` is 32 bytes:
+   `S32 = (sA ⊕ sB) || (sA ⊕ sB)` — two QR scans
    minimum; neither side dictates `S` alone. Typing path allowed only for
-   fingerprints/short codes.
+   fingerprints/short codes. (v1.4.0 JS sent 16-byte `S` and every pairing
+   failed at `deriveRoot` with `core: bad handshake input length`; v1.4.1
+   expands halves to 32 bytes to match `RootKey` and `handshake_test.go`.)
 3. Each side encapsulates to the peer's key and shows the resulting `ct`
    on a second QR each: `(ct_lo, k_lo)` = Encaps(`MK_hi`),
    `(ct_hi, k_hi)` = Encaps(`MK_lo`). Both `ct`s are exchanged.
-4. Compare `SHA-384(A_lo ‖ A_hi ‖ MK_lo ‖ MK_hi ‖ S ‖ ct_lo ‖ ct_hi)`
+4. Compare `SHA-384(A_lo ‖ A_hi ‖ MK_lo ‖ MK_hi ‖ S32 ‖ ct_lo ‖ ct_hi)`
    rendered as 6 words + digits **out loud**. Abort on any mismatch.
    (Covers keys, secret, AND both ciphertexts — a swapped `ct` is
    caught here, not discovered later as silent decryption failure.)
+   JS builds this exact ordered transcript (no sorting); `ct_lo` is the
+   lo side's ciphertext.
 5. Both compute, with HKDF-SHA-384 and distinct labels:
    - `k_ecdh` = ECDH(a, B_peer) — 48 bytes (static-static; forward
      secrecy comes from chain stepping + deletion, not from this ECDH)
    - `root = HKDF-SHA-384(salt = SHA-384(A_lo‖A_hi‖MK_lo‖MK_hi),
-     ikm = k_ecdh ‖ k_lo ‖ k_hi ‖ S, info = "XM2/root/v1", len = 96)`
+     ikm = k_ecdh ‖ k_lo ‖ k_hi ‖ S32, info = "XM2/root/v1", len = 96)`
+     (ikm is 48+32+32+32 = 144 bytes)
    - `chain_lo_hi = root[0:48]`, `chain_hi_lo = root[48:96]`.
 6. Delete `k_ecdh`, both `k_kem`s, and both `ct`s after derivation. Store
    only wrapped long-term keys (see §5). Each side starts its send

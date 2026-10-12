@@ -84,12 +84,14 @@ func Extract(salt, ikm []byte) ([]byte, error) {
 }
 
 // RootKey derives the 96-byte root from the ordered handshake transcript.
-// kECDH (48B), kLo, kHi (32B each, ordered), meeting secret S.
-// Mirrors docs/PROTOCOL-v2.md §2.5.
+// kECDH (48B), kLo, kHi (32B each, ordered), meeting secret S32.
+// S32 = (sA^sB)||(sA^sB) where sA,sB are 16B halves exchanged in QR codes.
+// Mirrors docs/PROTOCOL-v2.md §2.5. v1.4.1: JS now expands halves to 32B.
 func RootKey(ecdhPubLo, ecdhPubHi, mkLo, mkHi []byte, kECDH, kLo, kHi, meeting []byte) ([]byte, error) {
 	if len(kECDH) != ChainLen || len(kLo) != mlkem.SharedKeySize ||
 		len(kHi) != mlkem.SharedKeySize || len(meeting) != 32 {
-		return nil, errors.New("core: bad handshake input length")
+		return nil, fmt.Errorf("core: bad handshake input length (kECDH=%d want %d, kLo=%d want %d, kHi=%d want %d, meeting=%d want 32)",
+			len(kECDH), ChainLen, len(kLo), mlkem.SharedKeySize, len(kHi), mlkem.SharedKeySize, len(meeting))
 	}
 	saltInput := append(append(append([]byte{}, ecdhPubLo...), ecdhPubHi...), append(mkLo, mkHi...)...)
 	salt := sha512.Sum384(saltInput)
