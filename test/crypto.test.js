@@ -16,15 +16,15 @@ test('rejects a wrong phrase and uses the configured work factor', async () => {
   assert.equal(ITERATIONS, 600000);
 });
 
-test('keeps version fixed at 1.3.1 everywhere', () => {
-  assert.equal(VERSION, '1.3.1');
-  assert.equal(require('../package.json').version, '1.3.1');
+test('keeps version fixed at 1.4.0 everywhere', () => {
+  assert.equal(VERSION, '1.4.0');
+  assert.equal(require('../package.json').version, '1.4.0');
   const fs = require('node:fs');
   const gradle = fs.readFileSync(require('node:path').join(__dirname, '..', 'android', 'app', 'build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionName "1.3.1"'), 'android versionName must be 1.3.1');
-  assert.ok(gradle.includes('versionCode 14'), 'android versionCode must be 12');
+  assert.ok(gradle.includes('versionName "1.4.0"'), 'android versionName must be 1.4.0');
+  assert.ok(gradle.includes('versionCode 15'), 'android versionCode must be 12');
   const control = fs.readFileSync(require('node:path').join(__dirname, '..', 'packaging', 'debian', 'DEBIAN', 'control'), 'utf8');
-  assert.ok(control.includes('Version: 1.3.1'), 'deb control must be 1.3.1');
+  assert.ok(control.includes('Version: 1.4.0'), 'deb control must be 1.4.0');
 });
 
 test('round-trips unicode, emoji and punctuation', async () => {
@@ -87,4 +87,26 @@ test('v1 payloads still decrypt (backward compat), v2 seals use v2 AAD', async (
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'core.js'), 'utf8');
   assert.ok(src.includes('AAD_V1') && src.includes('AAD_V2'), 'both AAD contexts must exist');
   assert.ok(src.includes("data.v === 2 ? AAD_V2 : AAD_V1"), 'decrypt must select AAD by version');
+});
+
+test('vault seals history opaquely and opens with the right passphrase', async () => {
+  const { vaultSeal, vaultOpen } = require('../core.js');
+  const history = [
+    { id: 'm1-x', dir: 'outgoing', text: 'meet at sunset', sealed: 'XM1.abc', via: 'qr', to: '', ts: 1 },
+    { id: 'm2-y', dir: 'incoming', text: '🌙 secret', sealed: 'XM2.def', via: 'xm2', to: 'v2-paired', ts: 2 },
+  ];
+  const blob = await vaultSeal(history, 'correct horse vault phrase words');
+  assert.match(blob, /^XMV1\./);
+  assert.ok(!blob.includes('meet at sunset') && !blob.includes('secret'), 'locked blob must be opaque');
+  assert.deepEqual(await vaultOpen(blob, 'correct horse vault phrase words'), history);
+});
+
+test('vault rejects wrong passphrase, tampering, and bad shapes', async () => {
+  const { vaultSeal, vaultOpen } = require('../core.js');
+  const blob = await vaultSeal([{ text: 'hi' }], 'right phrase here words');
+  await assert.rejects(vaultOpen(blob, 'wrong phrase here words'));
+  await assert.rejects(vaultOpen('NOPE', 'right phrase here words'));
+  await assert.rejects(vaultOpen(blob.slice(0, -1) + (blob.endsWith('A') ? 'B' : 'A'), 'right phrase here words'));
+  await assert.rejects(vaultSeal({ text: 'x' }, ''));
+  await assert.rejects(vaultOpen(blob, ''));
 });

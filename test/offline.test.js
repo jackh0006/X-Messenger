@@ -127,19 +127,16 @@ test('session messages support delete, backup v2 carries sealed envelopes only',
   assert.ok(js.includes('chatSearch') && js.includes('toggleSelect'), 'search + select UI must exist');
 });
 
-test('plaintext never persists: localStorage holds labels/settings only', () => {
+test('plaintext never persists: localStorage holds labels/settings/sealed vault only', () => {
   const js = read('app.js');
-  const allowed = new Set([
-    'PROFILE_KEY', 'SETTINGS_KEY', "'x-messenger-why-seen-v1'",
-    'PROFILE_KEY, SETTINGS_KEY',
-  ]);
   for (const m of js.matchAll(/localStorage\.setItem\(([^,]+),/g)) {
     const key = m[1].trim();
     // `key` is only allowed as the loop variable constrained to the two
     // label/settings constants (restore path); literals must be allow-listed.
+    // VAULT_KEY holds sealed ciphertext (XMV1 envelopes), never plaintext.
     const loopOk = key === 'key' && js.includes('for (const key of [PROFILE_KEY, SETTINGS_KEY])');
-    const ok = key === 'PROFILE_KEY' || key === 'SETTINGS_KEY' || key === "'x-messenger-why-seen-v1'" || loopOk;
-    assert.ok(ok, `localStorage may only store labels/settings, found: ${key}`);
+    const ok = key === 'PROFILE_KEY' || key === 'SETTINGS_KEY' || key === 'VAULT_KEY' || key === "'x-messenger-why-seen-v1'" || loopOk;
+    assert.ok(ok, `localStorage may only store labels/settings/sealed vault, found: ${key}`);
   }
   assert.ok(js.includes('Plaintext lives ONLY here'), 'session-only store contract must be documented');
   assert.ok(js.includes('sealedOnly'), 'restored envelopes must stay sealed-only (no plaintext)');
@@ -165,7 +162,7 @@ test('security guide states verifiable guarantees without hype', () => {
   const html = read('index.html');
   const js = read('app.js');
   assert.ok(html.includes('Verified guarantees'), 'guarantees section must exist');
-  assert.ok(html.includes('Session-only plaintext'), 'at-rest guarantee must be stated');
+  assert.ok(html.includes('Locked history'), 'at-rest guarantee must be stated');
   assert.ok(html.includes('Not a guarantee'), 'honesty box must stay');
   assert.ok(!/unhackable|CIA-grade|NSA-proof|military-grade/i.test(html + js), 'must never claim hype guarantees');
 });
@@ -191,7 +188,7 @@ test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
   assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
   assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
   assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
-  assert.ok(gradle.includes('versionCode 14') && gradle.includes('versionName "1.3.1"'), 'android version must be 1.3.1/13');
+  assert.ok(gradle.includes('versionCode 15') && gradle.includes('versionName "1.4.0"'), 'android version must be 1.4.0/13');
   const proguard = read('android/app/proguard-rules.pro');
   assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
 });
@@ -216,4 +213,43 @@ test('server serves WASM correctly and resolves paths on Windows', () => {
   assert.ok(srv.includes('.wasm') && srv.includes('application/wasm'), 'server must send application/wasm');
   assert.ok(srv.includes('package.json') || !/version: '1\.1\.0'/.test(srv), 'server version must be dynamic (no hardcoded old version)');
   assert.ok(srv.includes('lib/platform') || srv.includes('platform'), 'server must use the platform shim');
+});
+
+test('launch lands in the messenger: no auto splash screens', () => {
+  const js = read('app.js');
+  assert.ok(!/setTimeout\(\(\) => \{ try \{ openModal\('#whyDialog'\)/.test(js), 'why-dialog must not auto-open');
+  assert.ok(js.includes("land straight in the messenger"), 'direct-launch contract must be documented');
+});
+
+test('v2 pairing works over copied text end to end', () => {
+  const js = read('app.js');
+  for (const id of ['v2MyCodeText', 'v2CopyMyCode', 'v2MyCtText', 'v2CopyMyCt']) {
+    assert.ok(js.includes(id), `${id} must exist for text pairing`);
+  }
+  assert.ok(js.includes('clearClipboardLater'), 'pairing copies must clear the clipboard');
+  assert.ok(js.includes("buildPairDialog(); document.getElementById(isCode ? 'v2PeerCode' : 'v2PeerCt')"), 'camera must route v2 codes into the pair dialog');
+});
+
+test('paired v2 contact owns a user page and its thread seals', () => {
+  const js = read('app.js');
+  assert.ok(js.includes("id === 'v2-paired'"), 'paired contact must have a stable user id');
+  assert.ok(js.includes('v2threadActive'), 'XM2 seals must be scoped to the paired thread');
+  assert.ok(!/if \(v2paired && v2send\) \{/.test(js), 'seals must not hijack every thread when paired');
+  assert.ok(js.includes("mate.v2 = false"), 'unpair must mark the session ended on the user');
+});
+
+test('vault history: lock UI, auto-lock, settings wipe cover everything', () => {
+  const js = read('app.js');
+  for (const id of ['vaultDialog', 'vaultLockBtn', 'vaultChangeBtn', 'vaultSetupBtn']) {
+    assert.ok(js.includes(id), `${id} must exist`);
+  }
+  assert.ok(js.includes("vaultMode = 'locked'") || js.includes('vaultLock()'), 'background hide must lock');
+  assert.ok(js.includes('VAULT_KEY, PROFILE_KEY'), 'delete-all must include the vault blob');
+  assert.ok(js.includes('maybeVaultBanner'), 'first-run vault offer must be a dismissible banner, not a popup');
+});
+
+test('backup carries thread addressing for export and restore', () => {
+  const js = read('app.js');
+  assert.ok(js.includes("to: m.to || ''"), 'backup must preserve thread addressing');
+  assert.ok(js.includes("dir: e.dir === 'outgoing' ? 'outgoing' : 'incoming'"), 'restore must preserve direction');
 });

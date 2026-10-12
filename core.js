@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 (function (root) {
-  const VERSION = '1.3.1';
+  const VERSION = '1.4.0';
   const ITERATIONS = 600000;
   const MAX_TEXT_CHARS = 8000;
   // Largest padded bucket is 16384 bytes; 4 bytes hold the length prefix.
@@ -8,6 +8,11 @@
   const MAX_PAYLOAD_CHARS = 32768;
   const AAD_V1 = 'XMessenger/1';
   const AAD_V2 = 'XMessenger/2';
+  const AAD_VAULT = 'XMessenger/vault1';
+  const VAULT_FORMAT = 'XMV1.';
+  // History blobs are local files, never QR: generous but bounded cap keeps
+  // PBKDF2/AEAD work finite on hostile input.
+  const MAX_VAULT_BYTES = 2 * 1024 * 1024;
   const encoder = new TextEncoder();
   // Never silently replace malformed UTF-8 in decrypted content.  A malformed
   // plaintext is an invalid transfer, not a message with substituted bytes.
@@ -130,6 +135,58 @@
       try { ciphertext.fill(0); salt.fill(0); iv.fill(0); } catch {}
     }
   }
-  root.XMessengerCrypto = { encryptText, decryptText, ITERATIONS, MAX_TEXT_CHARS, MAX_TEXT_BYTES, MAX_PAYLOAD_CHARS, VERSION };
+  root.XMessengerCrypto = { encryptText, decryptText, vaultSeal, vaultOpen, ITERATIONS, MAX_TEXT_CHARS, MAX_TEXT_BYTES, MAX_PAYLOAD_CHARS, MAX_VAULT_BYTES, VERSION };
+
+  // ---- Encrypted on-device history vault (same primitives, no new crypto)
+  // vaultSeal(value, phrase) -> 'XMV1.…' (salt+nonce fresh per seal).
+  // vaultOpen(payload, phrase) -> the original value. Wrong passphrase or
+  // any altered byte fails closed. Plaintext value must be JSON-serializable.
+  async function vaultSeal(value, phrase) {
+    if (typeof phrase !== 'string' || phrase.length === 0) throw new Error('A vault passphrase is required.');
+    let raw;
+    try { raw = encoder.encode(JSON.stringify(value)); }
+    catch { throw new Error('History cannot be stored.'); }
+    if (raw.length > MAX_VAULT_BYTES) throw new Error('History too large to lock (cap reached — delete old messages).');
+    const salt = randomBytes(16);
+    const iv = randomBytes(12);
+    const key = await keyFor(phrase, salt, ['encrypt']);
+    try {
+      const encrypted = new Uint8Array(await subtle().encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(AAD_VAULT) }, key, raw));
+      return VAULT_FORMAT + b64url(encoder.encode(JSON.stringify({ v: 1, kdf: 'PBKDF2-SHA256', i: ITERATIONS, s: b64url(salt), n: b64url(iv), c: b64url(encrypted) })));
+    } finally {
+      raw.fill(0); salt.fill(0); iv.fill(0);
+    }
+  }
+
+  async function vaultOpen(payload, phrase) {
+    if (typeof payload !== 'string' || typeof phrase !== 'string') throw new TypeError('Payload and passphrase must be strings.');
+    if (!payload.startsWith(VAULT_FORMAT)) throw new Error('Not an X Messenger vault.');
+    if (phrase.length === 0) throw new Error('A vault passphrase is required.');
+    let data;
+    try {
+      data = JSON.parse(decoder.decode(fromB64url(payload.slice(VAULT_FORMAT.length))));
+    } catch {
+      throw new Error('Unsupported vault format.');
+    }
+    if (!data || data.v !== 1 || data.kdf !== 'PBKDF2-SHA256' || data.i !== ITERATIONS) throw new Error('Unsupported vault format.');
+    if (typeof data.s !== 'string' || typeof data.n !== 'string' || typeof data.c !== 'string') throw new Error('Unsupported vault format.');
+    const salt = fromB64url(data.s);
+    const iv = fromB64url(data.n);
+    const ciphertext = fromB64url(data.c);
+    if (salt.length !== 16 || iv.length !== 12 || ciphertext.length === 0 || ciphertext.length > MAX_VAULT_BYTES + 1024) throw new Error('Unsupported vault format.');
+    const key = await keyFor(phrase, salt, ['decrypt']);
+    try {
+      const raw = new Uint8Array(await subtle().decrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(AAD_VAULT) }, key, ciphertext));
+      try {
+        return JSON.parse(decoder.decode(raw));
+      } finally {
+        raw.fill(0);
+      }
+    } catch {
+      throw new Error('Could not unlock: wrong passphrase or altered vault.');
+    } finally {
+      try { ciphertext.fill(0); salt.fill(0); iv.fill(0); } catch {}
+    }
+  }
   if (typeof module !== 'undefined') module.exports = root.XMessengerCrypto;
 })(typeof globalThis !== 'undefined' ? globalThis : window);
