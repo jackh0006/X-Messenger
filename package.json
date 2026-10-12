@@ -1,6 +1,6 @@
 {
   "name": "x-messenger-offline",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Open-source offline encrypted QR courier",
   "main": "index.js",
   "bin": {
@@ -10,6 +10,7 @@
     "start": "npm run gui",
     "test": "node --test test/crypto.test.js test/offline.test.js test/ui-invariants.test.js test/messages.test.js",
     "build:web": "node scripts/build-web.js",
+    "check:wasm": "node scripts/check-wasm-pair.js",
     "android:setup": "npm run android:sync && npx cap open android",
     "android:sync": "npm run build:web && npx cap sync android",
     "android:open": "npx cap open android",

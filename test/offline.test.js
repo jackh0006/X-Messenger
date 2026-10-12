@@ -58,11 +58,24 @@ test('v2 bridge is WASM-local, experimental, and keeps v1 readable', () => {
   assert.ok(js.includes('vendor/xm2.wasm') && js.includes('vendor/wasm_exec.js'), 'bridge must load pinned local WASM only');
   assert.ok(js.includes("vendor/xm2.wasm"), 'WASM must load same-origin (relative first, Android-safe)');
   assert.ok(js.includes('xm2capability'), 'bridge must pre-flight WebAssembly/BigInt with honest errors');
+  assert.ok(js.includes('xm2appV'), 'engine files must be cache-busted per release (stale runtimes kill the bridge)');
+  assert.ok(js.includes('unhandledrejection'), 'async engine failures must be captured with their real text');
   assert.ok(js.includes('v2status') && js.includes('Not connected'), 'pair status pill must exist');
+  assert.ok(js.includes('xm2diag') && js.includes('Copy diagnostics'), 'pair dialog must offer secret-free diagnostics');
   assert.ok(js.includes('v2Banner') && js.includes('unaudited'), 'experimental banner must exist');
   assert.ok(js.includes("startsWith('XM2.')") && js.includes('decryptText'), 'receive must try XM2 then fall back to XM1');
   assert.ok(js.includes('buildPairDialog') && js.includes('v2Confirm') && js.includes('OUT LOUD'), 'pairing must require out-loud compare + confirm');
   assert.ok(js.includes('data-view="pair"') || js.includes("view === 'pair'") || js.includes('pairDialog'), 'pairing must be reachable from the sidebar');
+});
+
+test('wasm pair is pinned: one toolchain, stamped, functionally gated', () => {
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'check-wasm-pair.js')), 'pair check script must exist');
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'build-web.js')), 'bundle builder must exist');
+  const build = read('scripts/build-web.js');
+  assert.ok(build.includes('pickGo') && build.includes('1.24'), 'bundle must pin Go >= 1.24 and fail hard otherwise');
+  assert.ok(build.includes('vendor/BUILD') || build.includes('BUILD'), 'bundle must stamp the pair toolchain');
+  const rel = read('scripts/release.sh');
+  assert.ok(rel.includes('check-wasm-pair'), 'release must gate on the functional pair check');
 });
 
 test('camera scan accepts v2 envelopes as well as XM1', () => {
@@ -133,6 +146,21 @@ test('plaintext never persists: localStorage holds labels/settings only', () => 
   assert.ok(!/localStorage\.setItem\(['"]x-messenger-messages/.test(js), 'message plaintext must never be persisted');
 });
 
+test('opening a sealed envelope stages ciphertext only, stores nothing', () => {
+  const js = read('app.js');
+  const fn = js.match(/function openEnvelope[\s\S]*?\n\}/);
+  assert.ok(fn, 'openEnvelope must exist');
+  assert.ok(fn[0].includes('m.sealed'), 'envelope open must stage the sealed ciphertext');
+  assert.ok(!fn[0].includes('localStorage'), 'envelope open must not persist anything');
+  assert.ok(!fn[0].includes('chatEntry'), 'envelope open must not create plaintext entries');
+});
+
+test('boot probe shows an update notice on ancient browsers, not a white screen', () => {
+  const html = read('index.html');
+  assert.ok(html.includes('Boot probe'), 'boot probe must exist');
+  assert.ok(html.includes('System WebView'), 'probe must name the fix (update WebView)');
+});
+
 test('security guide states verifiable guarantees without hype', () => {
   const html = read('index.html');
   const js = read('app.js');
@@ -163,7 +191,7 @@ test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
   assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
   assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
   assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
-  assert.ok(gradle.includes('versionCode 13') && gradle.includes('versionName "1.3.0"'), 'android version must be 1.3.0/13');
+  assert.ok(gradle.includes('versionCode 14') && gradle.includes('versionName "1.3.1"'), 'android version must be 1.3.1/13');
   const proguard = read('android/app/proguard-rules.pro');
   assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
 });

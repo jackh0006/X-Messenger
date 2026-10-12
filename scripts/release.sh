@@ -27,6 +27,8 @@ npm test
 
 echo "== 3/6 web bundle =="
 npm run build:web
+echo "== 3b/6 wasm pair gate =="
+node scripts/check-wasm-pair.js
 
 echo "== 4/6 desktop packages =="
 OUT="${X_MESSENGER_OUT:-$PWD/dist}"

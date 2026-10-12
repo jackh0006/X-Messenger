@@ -71,6 +71,16 @@ test("views render dedicated pages: receive list, users, pair status", () => {
   assert.ok(css.includes(".conn-pill") && css.includes(".user-card"), "view styles missing");
 });
 
+test("per-user threads: addressed messages leave Saved, contacts live in Users only", () => {
+  const js = read("app.js");
+  assert.ok(js.includes("threadFor"), "thread state missing");
+  assert.ok(js.includes("to: opts.to"), "message addressing missing");
+  assert.ok(js.includes("Thread with"), "thread header missing");
+  assert.ok(!js.includes("recipientList"), "sidebar contacts list must be gone (Users page only)");
+  assert.ok(js.includes("setView('users')"), "new chat must open Users");
+  assert.ok(js.includes("items.filter(m => !m.to)"), "Saved must show general notes only");
+});
+
 test("small screens never overflow horizontally (360px class)", () => {
   const css = read("style.css");
   assert.ok(css.includes("overflow-x:clip") || css.includes("overflow-x: clip"), "page x-clip missing");

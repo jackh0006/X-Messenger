@@ -1,4 +1,4 @@
-# Use X Messenger on Android (v1.3.0+)
+# Use X Messenger on Android (v1.3.1+)
 
 Supported: **Android 7.0+ (`minSdk 24`), tested on Android 9 (API 28) through
 Android 16**, `armeabi-v7a` (arm32 phones) + `arm64-v8a` + `x86_64`/`x86`
@@ -46,6 +46,12 @@ request internet permission (`aapt dump badging` verifies this every release).
 Old WebViews: devices that never updated Android System WebView may lack
 WebCrypto (`crypto.subtle`). The app fails closed with “update WebView”
 instead of weak crypto. Update WebView from Play, then retry.
+
+Minimum browser floor: the app needs an updated System WebView/Chrome
+(roughly Chrome 80+, with WebAssembly + BigInt) for sealing/scanning and
+the v2 engine. On anything older the start screen says so instead of going
+white. XM1 transfers need `crypto.subtle` (WebCrypto); v2 pairing needs
+WebAssembly. Stock Android 9 phones are fine once WebView is updated.
 
 ## Everyday use
 

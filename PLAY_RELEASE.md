@@ -1,4 +1,4 @@
-# Google Play release (v1.3.0+)
+# Google Play release (v1.3.1+)
 
 The debug APK is only for testing. Google Play requires a signed Android App
 Bundle (`.aab`) and your own upload key. Sideloaded APKs will **always** show
@@ -27,7 +27,7 @@ npm run android:apk:release
 ```
 
 Current `versionCode`/`versionName` come from `android/app/build.gradle`
-(v1.3.0 = `versionCode 13`, per-ABI `*10+offset` for GitHub multi-APK;
+(v1.3.1 = `versionCode 13`, per-ABI `*10+offset` for GitHub multi-APK;
 Play serves splits from the single `.aab`). `minSdk 24` covers Android 9
 (API 28); `targetSdk/compileSdk 36` is Play-compliant stable (37 is preview).
 
@@ -36,7 +36,7 @@ Play serves splits from the single `.aab`). `minSdk 24` covers Android 9
 ```bash
 AAPT=~/Android/Sdk/build-tools/*/aapt
 $AAPT dump badging X-Messenger-<ver>-Android-arm64.apk | grep -E "versionName|uses-permission|native-code"
-# Expect: versionName='1.3.0', CAMERA only, NO internet, native-code includes armeabi-v7a + arm64-v8a
+# Expect: versionName='1.3.1', CAMERA only, NO internet, native-code includes armeabi-v7a + arm64-v8a
 ```
 
 Test on: Android 9 (API 28, arm32) + Android 13/14 (arm64) + emulator

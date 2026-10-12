@@ -45,10 +45,12 @@ const chatStore = { list: [], seq: 0 };
 let chatFilter = '', selectMode = false, starFilter = false, replyTarget = null;
 // Current main-pane view: 'saved' | 'receive' | 'users' | 'pair' | 'settings'.
 // Receive shows incoming only; users/pair render dedicated pages.
+// threadFor: null = general notes (Saved); a profile id = that user's thread.
 let currentView = 'saved';
+let threadFor = null;
 const selectedIds = new Set();
 function chatEntry(dir, text, opts = {}) {
-  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0, replyTo: opts.replyTo || '', starred: false, fwd: !!opts.fwd };
+  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', to: opts.to || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0, replyTo: opts.replyTo || '', starred: false, fwd: !!opts.fwd };
   chatStore.list.push(entry);
   if (entry.viewOnce) setTimeout(() => deleteMessage(entry.id, true), 30000);
   return entry;
@@ -94,18 +96,38 @@ function renderChat() {
     del.onclick = () => clearChat();
     row.append(scan, del); head.append(t, s, row); box.append(head);
   }
+  if (currentView === 'saved' && threadFor) {
+    const who = profiles().find(p => p.id === threadFor);
+    const head = document.createElement('div'); head.className = 'view-head';
+    const t = document.createElement('strong'); t.textContent = who ? `Thread with ${who.name}` : 'Thread';
+    const s = document.createElement('span'); s.textContent = 'Only messages sealed for this contact. Nothing leaves this device.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const back = document.createElement('button'); back.className = 'ghost-button'; back.textContent = '← All notes';
+    back.onclick = () => { threadFor = null; activeProfileId = null; setView('saved'); };
+    row.append(back); head.append(t, s, row); box.append(head);
+  }
   const q = chatFilter.trim().toLowerCase();
   let items = q ? chatStore.list.filter(m => (m.text || '').toLowerCase().includes(q)) : [...chatStore.list];
-  if (incomingOnly) items = items.filter(m => m.dir === 'incoming');
-  if (starFilter) items = items.filter(m => m.starred);
-  if (!chatStore.list.length) {
-    const w = document.createElement('div'); w.className = 'welcome-card';
-    w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
-    box.append(w); updateSelectBar(); return;
+  if (incomingOnly) {
+    items = items.filter(m => m.dir === 'incoming');
+  } else if (currentView === 'saved') {
+    // Saved Messages holds general notes only; addressed messages live in
+    // their user's thread (Users → Send). Incoming unaddressed seals also
+    // surface under Receive.
+    items = threadFor ? items.filter(m => m.to === threadFor) : items.filter(m => !m.to);
   }
-  if (incomingOnly && !items.length) {
+  if (starFilter) items = items.filter(m => m.starred);
+  if (!items.length && !q && !starFilter) {
     const w = document.createElement('div'); w.className = 'welcome-card';
-    w.innerHTML = '<div class="welcome-icon">⌗</div><h2>No received messages yet.</h2><p>Scan a QR or paste ciphertext to receive. Nothing here is uploaded anywhere.</p>';
+    if (incomingOnly) {
+      w.innerHTML = '<div class="welcome-icon">⌗</div><h2>No received messages yet.</h2><p>Scan a QR or paste ciphertext to receive. Nothing here is uploaded anywhere.</p>';
+    } else if (currentView === 'saved' && threadFor) {
+      w.innerHTML = '<div class="welcome-icon">▤</div><h2>No messages with this contact yet.</h2><p>Write below — it seals addressed to them only.</p>';
+    } else if (currentView === 'saved') {
+      w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>General notes live here. Messages to a contact live in their thread (Users → Send). Session only: history vanishes on lock or close.</p>';
+    } else {
+      w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
+    }
     box.append(w); updateSelectBar(); return;
   }
   if (q || starFilter) {
@@ -300,7 +322,7 @@ function bindMsgPress(article, bubble, id) {
   bubble.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(timer); openMsgMenu(id, e.clientX, e.clientY); });
 }
 function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
-function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Recent received + scan new'], users: ['▤', 'Users', 'Local contacts on this device'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; currentView = view; if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); v2status(); } renderChat(); closeDrawer(); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Recent received + scan new'], users: ['▤', 'Users', 'Local contacts on this device'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; currentView = view; if (view === 'saved') { threadFor = null; activeProfileId = null; try { $('#messageInput').placeholder = 'Write a private message…'; } catch {} } if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); v2status(); } renderChat(); closeDrawer(); }
 async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
@@ -312,7 +334,7 @@ async function presentTransfer(payload) {
   openModal('#transferDialog');
 }
 $('#sendMessage').onclick = () => { pendingText = $('#messageInput').value.trim(); if (pendingText) openModal('#phraseDialog'); };
-function startChat() { if (activeProfileId || profiles().length) { setView('saved'); $('#messageInput').focus(); } else profileDialog.showModal(); }
+function startChat() { if (profiles().length) { setView('users'); } else try { profileDialog.showModal(); } catch {} }
 try {
   const hv = document.createElement('label');
   hv.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:12px';
@@ -323,7 +345,7 @@ try {
   vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
   $('#sealTransfer').before(vo);
 } catch {}
-$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2paired && v2send) { $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2paired && v2send) { $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
 $('#openReceive').onclick = () => openModal('#receiveDialog');
 $('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { const sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2' }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
@@ -402,19 +424,18 @@ let activeProfileId = null;
 const profileStyles = document.createElement('style');
 profileStyles.textContent = '.recipient-heading{margin:10px 9px 2px;color:#8fa3ba;font:9px monospace;letter-spacing:.7px}.recipient-list{display:grid;gap:4px}.recipient-list .thread{padding:8px}.recipient-list .avatar{width:32px;height:32px;font-size:11px}'; document.head.append(profileStyles);
 $('#newTransfer').innerHTML = '<span>＋</span> New local chat';
-const recipientHeading = document.createElement('div'); recipientHeading.className = 'recipient-heading'; recipientHeading.textContent = 'LOCAL RECIPIENTS';
-const recipientList = document.createElement('div'); recipientList.className = 'recipient-list'; recipientList.id = 'recipientList';
-$('#newTransfer').after(recipientList); $('#newTransfer').after(recipientHeading);
+// Contacts live ONLY in the Users page (never duplicated in the sidebar).
+// renderProfiles() is kept as a no-op refresh hook for all call sites.
 const profileDialog = document.createElement('dialog'); profileDialog.className = 'modal'; profileDialog.id = 'profileDialog'; profileDialog.innerHTML = '<button class="modal-close" data-profile-close>×</button><div class="modal-content"><div class="modal-kicker">START LOCAL CHAT</div><h2>Add a recipient</h2><p>Create a private name and optional note, then start an offline chat. This label stays only on this device; it is not an account or verified identity.</p><label>Name<input id="profileName" maxlength="40" placeholder="Name or callsign"></label><label>Private note (optional)<input id="profileNote" maxlength="120" placeholder="How you know or verify this person"></label><button class="primary-large" id="saveProfile">Start chat <span>→</span></button></div>';
 document.body.append(profileDialog); profileDialog.querySelector('[data-profile-close]').onclick = () => profileDialog.close();
 function profiles() { try { const saved = JSON.parse(localStorage.getItem(PROFILE_KEY)); return Array.isArray(saved) ? saved : []; } catch { return []; } }
 function saveProfiles(items) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(items)); } catch {} }
 function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase() || '•'; }
-function activateProfile(profile) { activeProfileId = profile.id; $('#viewIcon').textContent = initials(profile.name); $('#viewTitle').textContent = profile.name; $('#viewSubtitle').textContent = profile.note || 'Local offline recipient'; $('#messageInput').placeholder = `Write an encrypted message for ${profile.name}…`; document.querySelectorAll('[data-view]').forEach(button => button.classList.remove('active')); currentView = 'saved'; renderProfiles(); renderChat(); try { $('#messageInput').focus(); } catch {} }
+function activateProfile(profile) { activeProfileId = profile.id; threadFor = profile.id; $('#viewIcon').textContent = initials(profile.name); $('#viewTitle').textContent = profile.name; $('#viewSubtitle').textContent = (profile.note || 'Local offline recipient') + ' — thread (only messages for this contact)'; $('#messageInput').placeholder = `Write an encrypted message for ${profile.name}…`; document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === 'saved')); currentView = 'saved'; renderProfiles(); renderChat(); try { $('#messageInput').focus(); } catch {} }
 function deleteProfile(id) {
   const items = profiles().filter(p => p.id !== id);
   saveProfiles(items);
-  if (activeProfileId === id) { activeProfileId = null; $('#messageInput').placeholder = 'Write a private message…'; }
+  if (activeProfileId === id) { activeProfileId = null; threadFor = null; try { $('#messageInput').placeholder = 'Write a private message…'; } catch {} }
   renderProfiles(); renderChat();
 }
 // Users page: every local contact with Send text + Delete. Labels only —
@@ -485,7 +506,7 @@ function renderPairPane(box) {
   }
   head.append(row); box.append(head);
 }
-function renderProfiles() { recipientList.replaceChildren(); const saved = profiles(); recipientHeading.style.display = saved.length ? '' : 'none'; saved.forEach(profile => { const button = document.createElement('button'); button.className = `thread${profile.id === activeProfileId ? ' active' : ''}`; button.innerHTML = `<span class="avatar blue">${initials(profile.name)}</span><span class="thread-copy"><strong></strong><small></small></span>`; button.querySelector('strong').textContent = profile.name; button.querySelector('small').textContent = profile.note || 'Tap to start chat'; button.onclick = () => activateProfile(profile); recipientList.append(button); }); }
+function renderProfiles() { try { if (currentView === 'users') renderChat(); } catch {} }
 $('#saveProfile').onclick = () => { const name = $('#profileName').value.trim().slice(0, 40), note = $('#profileNote').value.trim().slice(0, 120); if (!name) { $('#profileName').setCustomValidity('Give this local profile a name.'); $('#profileName').reportValidity(); return; } const saved = profiles(); if (saved.length >= 100) { $('#profileName').setCustomValidity('Too many local recipients (max 100). Delete one first.'); $('#profileName').reportValidity(); return; } if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) { $('#profileName').setCustomValidity('That name already exists locally.'); $('#profileName').reportValidity(); return; } const profile = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, name, note }; saved.push(profile); saveProfiles(saved); renderProfiles(); profileDialog.close(); $('#profileName').value = ''; $('#profileNote').value = ''; activateProfile(profile); };
 $('#newTransfer').onclick = startChat;
 renderProfiles();
@@ -547,7 +568,7 @@ function openEnvelope(id) {
 $('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded (labels, settings, sealed envelopes — never plaintext or phrases). Store it securely.'; };
 $('#restoreData').onclick = () => $('#restoreFile').click();
 $('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !e.sealed.startsWith('XM1.') || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
-$('#deleteData').onclick = () => { if (!confirm('Delete ALL X Messenger data from this device (labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; wipeSession(); currentPayload = ''; [PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
+$('#deleteData').onclick = () => { if (!confirm('Delete ALL X Messenger data from this device (labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; wipeSession(); currentPayload = ''; [PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
 $('#openSecurityGuide').onclick = () => { settingDialog.close(); openModal('#securityDialog'); };
 function validDomainUi(d) { return typeof d === 'string' && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\.[a-z]{2,}$/i.test(d.trim()); }
 async function refreshConn() {
@@ -602,48 +623,106 @@ function xm2capability() {
   }
   return { ok: true };
 }
+// App bundle version for cache-busting engine files (parsed from our own
+// script URL: app.js?v=X.Y.Z). Stale cached wasm_exec.js is a real-world
+// bridge killer on phones that tested older releases.
+function xm2appV() {
+  try {
+    const src = (document.currentScript && document.currentScript.src) || '';
+    const m = src.match(/[?&]v=([^&]+)/);
+    if (m) return m[1];
+  } catch {}
+  return '1';
+}
+// Device facts for support (no secrets: booleans, versions, sizes, timings).
+function xm2diag() {
+  const d = { ok: false, wasm: typeof WebAssembly !== 'undefined', bigInt: typeof BigInt !== 'undefined' };
+  try {
+    d.goDefined = typeof Go !== 'undefined';
+    d.bridge = typeof window.xm2 !== 'undefined';
+    d.ua = (navigator.userAgent || '').slice(0, 160);
+    d.url = String(location.protocol + '//' + location.host + location.pathname).slice(0, 120);
+    d.paired = !!v2paired;
+    d.lastError = window._v2lastError || '';
+    d.ok = d.wasm && d.bigInt && d.goDefined && d.bridge;
+  } catch (e) { d.error = String((e && e.message) || e).slice(0, 120); }
+  return d;
+}
 function xm2load() {
   if (xm2p) return xm2p;
   xm2p = (async () => {
-    const cap = xm2capability();
-    if (!cap.ok) throw new Error(cap.reason);
-    if (typeof window.xm2 !== 'undefined') return window.xm2;
-    await new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      // Relative URL: works under https://127.0.0.1, file-less Linux GUI,
-      // and Capacitor (capacitor://localhost) alike. Absolute '/vendor/…'
-      // breaks on Android, so it is only a fallback in the fetch below.
-      s.src = 'vendor/wasm_exec.js';
-      s.onload = resolve;
-      s.onerror = () => reject(new Error('v2 engine file missing (wasm_exec.js) — reinstall the app from the signed release, then retry.'));
-      document.head.append(s);
-    });
-    if (typeof Go === 'undefined') throw new Error('v2 engine starter missing — reinstall the app from the signed release, then retry.');
-    const go = new Go();
-    // Same-origin WASM bytes. Try document-relative first (Android-safe),
-    // then root-absolute (desktop server). Either may 404 on a broken bundle.
-    let bin = null, lastErr = null;
-    for (const url of ['vendor/xm2.wasm', '/vendor/xm2.wasm']) {
-      try {
-        const resp = await Promise.race([
-          fetch(url, { cache: 'no-store' }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000)),
-        ]);
-        if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
-        bin = await resp.arrayBuffer();
-        break;
-      } catch (e) { lastErr = e; }
-    }
-    if (!bin) throw new Error(`v2 engine bytes unreachable (${(lastErr && lastErr.message) || 'fetch failed'}) — reinstall the app, then retry. XM1 transfers unaffected.`);
-    let mod;
+    const t0 = Date.now();
+    const note = (e) => { try { window._v2lastError = String((e && e.message) || e).slice(0, 200); } catch {} };
+    // Surface async Go runtime failures with their real text instead of a
+    // mystery "no bridge" message.
+    const asyncErrs = [];
+    const onRej = (e) => { asyncErrs.push(String((e && e.reason && e.reason.message) || (e && e.message) || e).slice(0, 200)); };
+    window.addEventListener('unhandledrejection', onRej);
     try {
-      mod = await WebAssembly.instantiate(bin, go.importObject);
-    } catch (e) {
-      throw new Error(`v2 engine failed to start on this device (${e.message || 'WebAssembly error'}). Likely cause: old WebView or low memory — update Android System WebView and close other apps, then retry. XM1 QR transfers work fine without v2.`);
-    }
-    go.run(mod.instance);
-    if (typeof window.xm2 === 'undefined') throw new Error('v2 bridge failed to start (engine ran but exposed no bridge) — reinstall the app, then retry.');
-    return window.xm2;
+      const cap = xm2capability();
+      if (!cap.ok) throw new Error(cap.reason);
+      if (typeof window.xm2 !== 'undefined') return window.xm2;
+      const v = xm2appV();
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        // Relative URL (+ version cache-buster): works under
+        // https://127.0.0.1, file-less Linux GUI, and Capacitor
+        // (capacitor://localhost) alike, and evicts runtimes cached from
+        // older releases. Absolute '/vendor/…' breaks on Android, so it is
+        // only a fallback in the fetch below.
+        s.src = `vendor/wasm_exec.js?v=${encodeURIComponent(v)}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('v2 engine file missing (wasm_exec.js) — reinstall the app from the signed release, then retry.'));
+        document.head.append(s);
+      });
+      if (typeof Go === 'undefined') throw new Error('v2 engine starter missing — reinstall the app from the signed release, then retry.');
+      const go = new Go();
+      // Same-origin WASM bytes. Try document-relative first (Android-safe),
+      // then root-absolute (desktop server). Either may 404 on a broken bundle.
+      let bin = null, lastErr = null;
+      for (const url of [`vendor/xm2.wasm?v=${encodeURIComponent(v)}`, `/vendor/xm2.wasm?v=${encodeURIComponent(v)}`]) {
+        try {
+          const resp = await Promise.race([
+            fetch(url, { cache: 'no-store' }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000)),
+          ]);
+          if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+          bin = await resp.arrayBuffer();
+          break;
+        } catch (e) { lastErr = e; }
+      }
+      if (!bin) throw new Error(`v2 engine bytes unreachable (${(lastErr && lastErr.message) || 'fetch failed'}) — reinstall the app, then retry. XM1 transfers unaffected.`);
+      let mod;
+      try {
+        mod = await WebAssembly.instantiate(bin, go.importObject);
+      } catch (e) {
+        throw new Error(`v2 engine failed to start on this device (${e.message || 'WebAssembly error'}). Likely cause: old WebView or low memory — update Android System WebView and close other apps, then retry. XM1 QR transfers work fine without v2.`);
+      }
+      go.run(mod.instance || mod);
+      // Registration can lag run() on slow devices — poll briefly instead of
+      // failing on the first synchronous check.
+      const waitUntil = Date.now() + 10000;
+      while (typeof window.xm2 === 'undefined' && Date.now() < waitUntil) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (typeof window.xm2 === 'undefined') {
+        const extra = asyncErrs.length ? ` Engine said: ${asyncErrs[0]}` : '';
+        throw new Error(`v2 bridge failed to start (engine ran but exposed no bridge).${extra} Fix: reinstall the signed 1.3.1+ app (old cached engine files cause this), update Android System WebView, then retry. XM1 transfers unaffected.`);
+      }
+      // Self-test ping: prove the bridge answers before pairing step 1.
+      try {
+        const probe = JSON.parse(window.xm2.fingerprint(JSON.stringify({ a: 'AA', b: 'AQ' })));
+        if (probe.error || !/^[0-9a-f]{8}(-[0-9a-f]{8}){5}$/.test(probe.hex || '')) {
+          throw new Error('self-test answer malformed');
+        }
+      } catch (e) {
+        try { window.xm2 = undefined; } catch {}
+        throw new Error(`v2 bridge started but failed its self-test (${(e && e.message) || 'bad answer'}) — reinstall the signed app, then retry.`);
+      }
+      try { window._v2loadMs = Date.now() - t0; } catch {}
+      return window.xm2;
+    } catch (e) { note(e); throw e; }
+    finally { window.removeEventListener('unhandledrejection', onRej); }
   })().catch(e => { xm2p = null; throw e; });
   return xm2p;
 }
@@ -808,6 +887,7 @@ function buildPairDialog() {
     + '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input id="v2Confirm" type="checkbox" style="width:auto"> We read the SAME fingerprint out loud</label>'
     + '<button class="primary-large" id="v2Step4">4 · Finish pairing <span>→</span></button>'
     + '<button class="ghost-button" id="v2Unpair">Unpair this contact</button>'
+    + '<button class="ghost-button" id="v2Diag">Copy diagnostics</button>'
     + '<p id="v2PairStatus" class="receive-status"></p></div>';
   document.body.append(d);
   d.querySelector('[data-close]').onclick = () => d.close();
@@ -817,4 +897,13 @@ function buildPairDialog() {
   d.querySelector('#v2Step3').onclick = v2pairFp;
   d.querySelector('#v2Step4').onclick = v2pairFinish;
   d.querySelector('#v2Unpair').onclick = () => { v2unpair(); const s = d.querySelector('#v2PairStatus'); if (s) s.textContent = 'Unpaired on this device. Pair again to seal with XM2.'; };
+  d.querySelector('#v2Diag').onclick = async () => {
+    const s = d.querySelector('#v2PairStatus');
+    try {
+      const txt = JSON.stringify(xm2diag());
+      await navigator.clipboard.writeText(txt);
+      clearClipboardLater();
+      if (s) s.textContent = 'Diagnostics copied (no secrets inside) — clears in 30s. Send it to support with your app version.';
+    } catch { if (s) s.textContent = 'Could not access clipboard on this device.'; }
+  };
 }

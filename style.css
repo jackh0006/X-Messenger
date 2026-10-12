@@ -41,3 +41,12 @@ html[data-x-theme="dark"] .conn-pill[data-on="1"]{background:#12352c;color:#6fd5
 .user-card{flex-wrap:wrap}
 .user-actions{grid-template-columns:1fr 1fr;width:100%}
 }
+/* v1.3.1: delete control never leaves the screen (message rows, small phones) */
+.message{align-items:flex-start;gap:6px;min-width:0}
+.message-bubble{flex:1 1 auto;min-width:0}
+.msg-del{flex-shrink:0;width:28px;height:28px;margin-top:6px}
+.msg-menu{max-width:calc(100vw - 32px)}
+.msg-quick{max-width:calc(100vw - 24px);flex-wrap:wrap;justify-content:center}
+@media(max-width:720px){
+.message-bubble{max-width:calc(100% - 40px)}
+}
