@@ -252,9 +252,9 @@ function trustCa(dataDir) {
   try {
     plat.safeMkdir(nssDb, 0o700);
     execFileSync('certutil', ['-d', `sql:${nssDb}`, '-A', '-t', 'C,,', '-n', 'X Messenger Local CA', '-i', caCert], { stdio: 'ignore' });
-    console.log('Trusted in Chrome/Firefox NSS store ( ~/.pki/nssdb ). Restart Chrome.');
+    console.log('Trusted in NSS store ( ~/.pki/nssdb ) for Chromium/Firefox fallback. Restart the app window.');
   } catch {
-    console.log('NSS trust skipped (certutil missing). Chrome will still warn until NSS trust is added.');
+    console.log('NSS trust skipped (certutil missing). Native shell uses the system store below; browsers still warn until NSS trust is added.');
   }
   console.log(plat.systemTrustHint(caCert));
   console.log('After trusting, reopen: x-messenger gui (warning gone, stays loopback-only HTTPS).');
@@ -337,27 +337,27 @@ function promptPort(question, def) {
   return new Promise((res) => rl.question(`${question} [${def}]: `, (a) => { rl.close(); res((a || '').trim() || String(def)); }));
 }
 function openSeparateWindow(endpoint, certPath) {
-  // Separate app window, never a browser tab and never the file protocol.
-  // Uses Chrome/Edge --app with an isolated profile so tabs, extensions and
-  // browsing history are not shared with the user's normal browser.
-  const profile = plat.chromeProfileDir();
+  // Native app window (no Chrome/Chromium): cipherlink-gui (GTK4 Adwaita +
+  // WebKitGTK) with an isolated webkit-profile. Never a browser tab, never the file protocol.
+  const profile = plat.webkitProfileDir();
   try { plat.safeMkdir(profile, 0o700); } catch {}
   let fp = '';
   try { fp = new (require('node:crypto').X509Certificate)(fs.readFileSync(certPath)).fingerprint256; } catch {}
-  const candidates = plat.browserCandidates();
-  const tryNext = (i) => {
-    if (i >= candidates.length) {
-      console.log(`X Messenger ready at ${endpoint} [separate window unavailable].`);
-      console.log(`Open it in a Chromium --app window: chromium --app=${endpoint}`);
-      if (fp) console.log(`Cert SHA256 (compare on first run): ${fp}`);
-      return;
-    }
-    const browser = candidates[i];
-    const child = spawn(browser, [`--app=${endpoint}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore', shell: plat.IS_WINDOWS && !path.isAbsolute(browser) });
-    child.on('error', () => tryNext(i + 1));
-    child.unref();
+  const nativeGui = path.join(root, 'bin', 'cipherlink-gui');
+  const tryNative = () => {
+    try {
+      const child = spawn(nativeGui, [endpoint, '--profile-dir', profile], { detached: true, stdio: 'ignore' });
+      child.on('error', () => fallback());
+      child.unref();
+      return true;
+    } catch { fallback(); return false; }
   };
-  tryNext(0);
+  const fallback = () => {
+    console.log(`X Messenger ready at ${endpoint} [native window unavailable].`);
+    console.log(`Open it in the native shell: cipherlink-gui ${endpoint}`);
+    if (fp) console.log(`Cert SHA256 (compare on first run): ${fp}`);
+  };
+  tryNative();
 }
 async function openGui() {
   // Debian installs immutable, prebuilt files in /usr/lib. Development builds

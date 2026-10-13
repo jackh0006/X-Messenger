@@ -46,3 +46,17 @@ test('no AI/OpenCode builder credit, jackh0006 only', () => {
   for (const f of files) assert.ok(!bad.test(read(f)), `${f} must have no AI builder credit`);
   assert.ok(read('package.json').includes('"author": "jackh0006"'), 'author must be jackh0006');
 });
+
+test('linux native shell: no Chromium dependency, WebKitGTK only', () => {
+  assert.ok(fs.existsSync(path.join(root, 'bin', 'cipherlink-gui')), 'native shell must exist');
+  const gui = read('bin/cipherlink-gui');
+  assert.ok(gui.includes('WebKit') && gui.includes('6.0'), 'shell must use WebKit 6.0');
+  assert.ok(gui.includes('by jackh0006'), 'shell must credit jackh0006');
+  assert.ok(!/spawn\(.*chrom|exec.*chrom|--app=\$\{endpoint\}/i.test(gui), 'shell must not spawn Chromium');
+  const cli = read('bin/cipherlink');
+  assert.ok(cli.includes('cipherlink-gui'), 'CLI must spawn native shell');
+  const control = read('packaging/debian/DEBIAN/control');
+  assert.ok(!/chromium|google-chrome|microsoft-edge/i.test(control), 'deb must not depend on Chromium');
+  assert.ok(control.includes('gir1.2-webkit'), 'deb must depend on WebKitGTK GI');
+  assert.ok(control.includes('python3-gi'), 'deb must depend on python3-gi');
+});

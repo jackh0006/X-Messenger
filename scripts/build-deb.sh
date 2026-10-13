@@ -101,5 +101,6 @@ install -m 644 "$project_root/packaging/debian/x-messenger.desktop" "$stage_dir/
 install -m 644 "$project_root/assets/icon.svg" "$stage_dir/usr/share/icons/hicolor/scalable/apps/x-messenger.svg"
 install -m 755 "$project_root/packaging/debian/x-messenger" "$stage_dir/usr/bin/x-messenger"
 install -m 755 "$project_root/packaging/debian/x-messenger-cli" "$stage_dir/usr/bin/x-messenger-cli"
+install -m 755 "$project_root/packaging/debian/cipherlink-gui" "$stage_dir/usr/bin/cipherlink-gui"
 dpkg-deb --build --root-owner-group "$stage_dir" "$output_path"
 echo "Built $output_path (arch=$DEB_ARCH version=$version)"

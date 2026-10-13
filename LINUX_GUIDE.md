@@ -1,8 +1,9 @@
-# Use X Messenger on Linux
+# Use X Messenger on Linux (by jackh0006)
 
-The GUI opens in a separate Chrome app window at a local HTTPS address on
-`127.0.0.1`. It has no remote proxy or Internet route; the server accepts
-connections only from this device and selects the first free port.
+The GUI opens in its own native window (GTK4 + WebKit, no Chrome needed)
+at a local HTTPS address on `127.0.0.1`. It has no remote proxy or
+Internet route; the server accepts connections only from this device
+and selects the first free port.
 
 ## Install the GUI app once
 

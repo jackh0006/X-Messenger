@@ -119,7 +119,7 @@ x-messenger gui --regen-cert [--lan]        # rotate loopback/LAN cert
 
 The phrase is always asked **hidden** (never in shell history unless you
 force `--phrase` for scripts; `--phrase` warns and is for automation
-only). `--app` is automatic (`chromium --app`, isolated profile), not a
+only). Native window is automatic (`cipherlink-gui`, isolated webkit profile), not a
 flag.
 
 ## Features (all platforms same)

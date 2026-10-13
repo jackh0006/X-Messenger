@@ -41,7 +41,8 @@ test('linux server defaults to loopback 443 HTTPS separate window with hardened 
   assert.ok(server.includes('443'), 'default HTTPS port must be 443');
   assert.ok(cli.includes('443'), 'CLI default must be 443');
   assert.ok(cli.includes('Choose another port'), 'CLI must prompt for another port when 443 is taken');
-  assert.ok(cli.includes('--app='), 'CLI must open a separate --app window, not a browser tab');
+  assert.ok(cli.includes('cipherlink-gui'), 'CLI must open the native shell, not a browser tab');
+  assert.ok(!/chromium --app=|google-chrome.*--app=/.test(cli), 'CLI must not spawn Chromium');
   assert.ok(!/file:\/\//.test(cli), 'CLI must never use file:// (breaks CSP/WebCrypto)');
   assert.ok(server.includes("'loopback'"), 'default bind must be loopback');
   assert.ok(server.includes("minVersion: 'TLSv1.2'"), 'must require TLS 1.2+');
@@ -188,7 +189,7 @@ test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
   assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
   assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
   assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
-  assert.ok(gradle.includes('versionCode 17') && gradle.includes('versionName "1.4.2"'), 'android version must be 1.4.2/16');
+  assert.ok(gradle.includes('versionCode 18') && gradle.includes('versionName "1.5.0"'), 'android version must be 1.5.0/16');
   const proguard = read('android/app/proguard-rules.pro');
   assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
 });

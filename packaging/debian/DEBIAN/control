@@ -1,9 +1,9 @@
 Package: x-messenger
-Version: 1.4.2
+Version: 1.5.0
 Section: utils
 Priority: optional
 Architecture: all
-Depends: nodejs (>= 18) | node (>= 18), openssl, ca-certificates, xdg-utils, chromium | chromium-browser | google-chrome | microsoft-edge
+Depends: nodejs (>= 18) | node (>= 18), openssl, ca-certificates, xdg-utils, python3-gi, gir1.2-webkit-6.0 | gir1.2-webkit2-4.1, libwebkitgtk-6.0-4 | libwebkit2gtk-4.1-0
 Recommends: certutil | libnss3-tools
 Maintainer: jackh0006 <jackh109867@gmail.com>
 Description: X Messenger offline encrypted QR courier

@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# X Messenger native shell entry (by jackh0006). No Chrome required.
+exec /usr/bin/python3 /usr/lib/x-messenger/bin/cipherlink-gui "$@"

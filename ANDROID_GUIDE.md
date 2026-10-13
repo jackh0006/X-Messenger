@@ -1,4 +1,4 @@
-# Use X Messenger on Android (v1.4.2+)
+# Use X Messenger on Android (v1.5.0+)
 
 Supported: **Android 7.0+ (`minSdk 24`), tested on Android 9 (API 28) through
 Android 16**, `armeabi-v7a` (arm32 phones) + `arm64-v8a` + `x86_64`/`x86`

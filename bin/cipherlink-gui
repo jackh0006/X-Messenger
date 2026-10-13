@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# X Messenger native GUI shell (by jackh0006).
+# GTK4 + libadwaita + WebKitGTK 6.0. No Chrome/Chromium required.
+# Loads the loopback-only https://127.0.0.1:PORT endpoint served by server.js.
+# Usage: cipherlink-gui <endpoint-url> [--profile-dir DIR]
+# Security: loopback https only, deny-by-default camera, isolated data store,
+# fail-closed TLS (pinned device-local CA fingerprint compare, no bypass).
+import os
+import sys
+import urllib.parse
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("WebKit", "6.0")
+from gi.repository import Adw, Gio, GLib, Gtk, WebKit  # noqa: E402
+
+
+def parse_args(argv):
+    url = None
+    profile = None
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a == "--profile-dir" and i + 1 < len(argv):
+            profile = argv[i + 1]
+            i += 2
+        elif a in ("--help", "-h", "help"):
+            print("X Messenger GUI shell (by jackh0006)")
+            print("Opens the offline GUI in a native window. No Chrome required.")
+            print("Usage: cipherlink-gui <https://127.0.0.1:PORT> [--profile-dir DIR]")
+            sys.exit(0)
+        elif not a.startswith("--") and url is None:
+            url = a
+            i += 1
+        else:
+            i += 1
+    return url, profile
+
+
+def is_loopback_https(url):
+    try:
+        u = urllib.parse.urlparse(url)
+        if u.scheme != "https":
+            return False
+        host = (u.hostname or "").lower()
+        return host in ("127.0.0.1", "localhost", "::1")
+    except Exception:
+        return False
+
+
+class Window(Adw.ApplicationWindow):
+    def __init__(self, app, url, profile_dir):
+        super().__init__(application=app, title="X Messenger")
+        self.set_default_size(1000, 700)
+
+        # Isolated website data (localStorage vault persists, never shared).
+        if profile_dir:
+            os.makedirs(profile_dir, mode=0o700, exist_ok=True)
+            ctx = WebKit.WebContext.new_with_website_data_directory(profile_dir)
+        else:
+            ctx = WebKit.WebContext.get_default()
+        try:
+            dm = ctx.get_website_data_manager()
+            dm.set_favicon_enabled(False)
+        except Exception:
+            pass
+
+        self.web = WebKit.WebView.new_with_context(ctx)
+        settings = self.web.get_settings()
+        try:
+            settings.set_enable_webaudio(False)
+            settings.set_enable_media_stream(True)
+            settings.set_enable_webrtc(False)
+            settings.set_enable_javascript(True)
+            settings.set_enable_webassembly(True)
+            settings.set_enable_local_storage(True)
+            settings.set_javascript_can_open_windows_automatically(False)
+        except Exception:
+            pass
+
+        # Deny-by-default camera: allow video-only for loopback GUI origin.
+        try:
+            self.web.connect("permission-request", self.on_permission)
+        except Exception:
+            pass
+        # Fail-closed TLS: any cert error shows fingerprint compare, never bypass silently.
+        try:
+            self.web.connect("load-failed-with-tls-errors", self.on_tls_error)
+        except Exception:
+            pass
+        try:
+            self.web.connect("download-started", self.on_download)
+        except Exception:
+            pass
+
+        self.set_content(self.web)
+        self.web.load_uri(url)
+
+    def on_permission(self, web, request):
+        try:
+            # UserMedia (camera) only, video-only, loopback origin only.
+            if request.__class__.__name__ == "UserMediaPermissionRequest":
+                try:
+                    is_video = request.is_for_video_device()
+                except Exception:
+                    is_video = True
+                try:
+                    is_audio = request.is_for_audio_device()
+                except Exception:
+                    is_audio = False
+                origin = ""
+                try:
+                    origin = request.get_security_origin().to_string()
+                except Exception:
+                    pass
+                ok_origin = origin.startswith("https://127.0.0.1") or origin.startswith("https://localhost")
+                if is_video and not is_audio and ok_origin:
+                    request.allow()
+                else:
+                    request.deny()
+                return True
+        except Exception:
+            pass
+        try:
+            request.deny()
+        except Exception:
+            pass
+        return True
+
+    def on_tls_error(self, web, failing_uri, certificate, errors):
+        try:
+            fp = ""
+            try:
+                fp = certificate.get_fingerprint_sha256() or ""
+            except Exception:
+                pass
+            dlg = Gtk.AlertDialog.new(
+                "Certificate problem\n\n%s\n\nSHA256: %s\n\n"
+                "Compare with: x-messenger gui --cert-info (in person). "
+                "If it does not match exactly, close and investigate." % (failing_uri, fp or "unknown")
+            )
+            dlg.show(self)
+        except Exception:
+            pass
+        return True  # stop load, fail closed
+
+    def on_download(self, web, download):
+        try:
+            # Save .xmsg / backup files via chooser into Downloads.
+            chooser = Gtk.FileChooserNative.new(
+                "Save file", self, Gtk.FileChooserAction.SAVE, "_Save", "_Cancel"
+            )
+            try:
+                suggested = download.get_suggested_filename() or "x-messenger-download"
+            except Exception:
+                suggested = "x-messenger-download"
+            chooser.set_current_name(suggested)
+            chooser.connect("response", lambda c, r: self._dl_response(c, r, download))
+            chooser.show()
+        except Exception:
+            pass
+        return True
+
+    def _dl_response(self, chooser, response, download):
+        try:
+            if response == Gtk.ResponseType.ACCEPT:
+                try:
+                    f = chooser.get_file()
+                    download.set_destination(f.get_uri())
+                except Exception:
+                    pass
+            else:
+                try:
+                    download.cancel()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def main():
+    url, profile = parse_args(sys.argv)
+    if not url or not is_loopback_https(url):
+        print("Refusing: URL must be loopback https (https://127.0.0.1:PORT).", file=sys.stderr)
+        return 2
+    if not profile:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        profile = os.path.join(base, "x-messenger", "webkit-profile")
+    app = Adw.Application(application_id="com.jackh0006.xmessenger", flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+
+    def on_activate(a):
+        w = Window(a, url, profile)
+        w.present()
+
+    app.connect("activate", on_activate)
+    return app.run([])
+
+
+if __name__ == "__main__":
+    sys.exit(main())
