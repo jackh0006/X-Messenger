@@ -139,10 +139,14 @@ func (s *Session) Open(body []byte) ([]byte, error) {
 	sealed := body[14+NonceLen:]
 
 	if key, ok := s.Skipped[counter]; ok {
-		defer zero(key)
+		plain, err := openWith(key, nonce, sealed, epoch, dir, counter)
+		zero(key)
+		if err != nil {
+			return nil, err
+		}
 		delete(s.Skipped, counter)
 		s.Seen[counter] = true
-		return openWith(key, nonce, sealed, epoch, dir, counter)
+		return plain, nil
 	}
 	// Derive forward from current chain, caching skipped keys.
 	value := append([]byte{}, s.Chain[:]...)
@@ -159,12 +163,18 @@ func (s *Session) Open(body []byte) ([]byte, error) {
 		copy(value, nk)
 		zero(nk)
 		if c == counter {
+			out, err := openWith(mk[:MsgKeyLen], nonce, sealed, epoch, dir, counter)
+			if err != nil {
+				zero(mk)
+				zero(value)
+				return nil, err
+			}
 			s.Seen[counter] = true
 			copy(s.Chain[:], value)
 			s.setBase(counter + 1)
-			out, err := openWith(mk[:MsgKeyLen], nonce, sealed, epoch, dir, counter)
 			zero(mk)
-			return out, err
+			zero(value)
+			return out, nil
 		}
 		if len(s.Skipped) >= MaxSkipped {
 			zero(mk)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 (function (root) {
-  const VERSION = '1.4.1';
+  const VERSION = '1.4.2';
   const ITERATIONS = 600000;
   const MAX_TEXT_CHARS = 8000;
   // Largest padded bucket is 16384 bytes; 4 bytes hold the length prefix.

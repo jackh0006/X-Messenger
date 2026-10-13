@@ -75,7 +75,11 @@ rm -rf "$stage_dir/usr/lib/x-messenger/.git" \
   "$stage_dir/usr/lib/x-messenger/tests" \
   "$stage_dir/usr/lib/x-messenger/screenshots" \
   "$stage_dir/usr/lib/x-messenger/cipherlink-v2-audit" \
-  "$stage_dir/usr/lib/x-messenger/.local" 2>/dev/null || true
+  "$stage_dir/usr/lib/x-messenger/.local" \
+  "$stage_dir/usr/lib/x-messenger/AGENTS.md" \
+  "$stage_dir/usr/lib/x-messenger/agent-config.example.jsonc" \
+  "$stage_dir/usr/lib/x-messenger/.opencode" \
+  "$stage_dir/usr/lib/x-messenger/packaging/debian/DEBIAN" 2>/dev/null || true
 find "$stage_dir/usr/lib/x-messenger" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 # Drop non-matching-arch demo binaries to keep the package small.
 for f in "$stage_dir/usr/lib/x-messenger/core"/v2demo-*; do
@@ -92,6 +96,7 @@ done
 sed -e "s/^Version:.*/Version: $version/" -e "s/^Architecture:.*/Architecture: $DEB_ARCH/" \
   "$project_root/packaging/debian/DEBIAN/control" > "$stage_dir/DEBIAN/control"
 chmod 644 "$stage_dir/DEBIAN/control"
+install -m 755 "$project_root/packaging/debian/DEBIAN/postinst" "$stage_dir/DEBIAN/postinst"
 install -m 644 "$project_root/packaging/debian/x-messenger.desktop" "$stage_dir/usr/share/applications/x-messenger.desktop"
 install -m 644 "$project_root/assets/icon.svg" "$stage_dir/usr/share/icons/hicolor/scalable/apps/x-messenger.svg"
 install -m 755 "$project_root/packaging/debian/x-messenger" "$stage_dir/usr/bin/x-messenger"

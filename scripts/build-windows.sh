@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Windows portable ZIPs: x64 + arm64 (no admin, no installer required).
-# Usage: bash scripts/build-windows.sh [x64|arm64|all]
-# Requires: node >= 18, Go >= 1.24 for v2 demo cross-compile (else source ships).
+# Windows portable ZIPs: x64 + arm64 (+ experimental x86) (no admin, no installer required).
+# Usage: bash scripts/build-windows.sh [x64|arm64|x86|all]
+# Requires: node >= 18, Go >= 1.24 for v2 demo + GUI launcher cross-compile (else source ships).
 set -euo pipefail
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 only="${1:-all}"
@@ -20,9 +20,12 @@ build_one() {
   local label="$1"; local goarch="$2"
   local demo="v2demo-windows-amd64.exe"
   if [ "$goarch" = "arm64" ]; then demo="v2demo-windows-arm64.exe"; fi
+  if [ "$goarch" = "386" ]; then demo="v2demo-windows-386.exe"; fi
   echo "== windows/$label =="
   if [ -n "$GO_BIN" ]; then
     (cd "$project_root/core" && GOOS=windows GOARCH="$goarch" "$GO_BIN" build -trimpath -o "$demo" ./cmd/xm2demo) || echo "warning: windows $label demo build failed" >&2
+    # GUI launcher .exe (by jackh0006): finds node.exe, spawns offline GUI.
+    (cd "$project_root/core" && GOOS=windows GOARCH="$goarch" "$GO_BIN" build -trimpath -o "X-Messenger-GUI-windows-$label.exe" ./cmd/xm-launcher) || echo "warning: windows $label launcher build failed" >&2
   else
     echo "warning: no Go >=1.24, shipping existing $demo if present" >&2
   fi
@@ -40,6 +43,9 @@ build_one() {
     [ -f "$project_root/core/$gof" ] && cp -a "$project_root/core/$gof" "$pkgdir/app/core/"
   done
   [ -f "$project_root/core/$demo" ] && cp -a "$project_root/core/$demo" "$pkgdir/app/core/"
+  if [ -f "$project_root/core/X-Messenger-GUI-windows-$label.exe" ]; then
+    cp -a "$project_root/core/X-Messenger-GUI-windows-$label.exe" "$pkgdir/X-Messenger-GUI.exe"
+  fi
   cp -a "$project_root/docs" "$pkgdir/app/" 2>/dev/null || true
   cp -a "$project_root/model" "$pkgdir/app/" 2>/dev/null || true
   cp -a "$project_root/packaging/windows/x-messenger.cmd" "$pkgdir/x-messenger.cmd"
@@ -51,13 +57,14 @@ REM X Messenger $version ($label) — double-click to open the offline GUI.
 pause
 EOF
   cat > "$pkgdir/README-Windows.txt" <<EOF
-X Messenger $version — Windows ($label), portable, no admin.
-Requires: Node.js 18+ on PATH (install Node 20 LTS), Edge/Chrome, openssl
+X Messenger $version — Windows ($label), portable, no admin. By jackh0006.
+Requires: Node.js 18+ on PATH (x64/arm64: Node 20 LTS; x86: Node 18 32-bit EOL, insecure — x64 preferred), Edge/Chrome, openssl
   (Git for Windows provides openssl.exe) for first-run local CA.
-Run:  x-messenger.cmd gui            (https://127.0.0.1:443 loopback, fallback 8443)
+Run:  X-Messenger-GUI.exe            (double-click .exe launcher, recommended)
+      x-messenger.cmd gui            (https://127.0.0.1:443 loopback, fallback 8443)
       x-messenger.cmd setup
       x-messenger.cmd encrypt "hello"
-      X-Messenger-GUI.cmd            (double-click)
+      X-Messenger-GUI.cmd            (double-click .cmd fallback)
 Data: %APPDATA%\\x-messenger (per-user, no admin).
 SmartScreen: first run may say Unknown publisher until the binary gains
   reputation. Prefer the signed setup.exe when published; verify SHA256SUMS.
@@ -72,6 +79,7 @@ EOF
 case "$only" in
   x64|amd64) build_one x64 amd64 ;;
   arm64) build_one arm64 arm64 ;;
-  all) build_one x64 amd64; build_one arm64 arm64 ;;
-  *) echo "Usage: $0 [x64|arm64|all]" >&2; exit 2 ;;
+  x86|386|32) build_one x86 386 ;;
+  all) build_one x64 amd64; build_one arm64 arm64; build_one x86 386 ;;
+  *) echo "Usage: $0 [x64|arm64|x86|all]" >&2; exit 2 ;;
 esac

@@ -6,6 +6,9 @@ android/local.properties
 *.apk
 *.aab
 *.jks
+*.keystore
+google-services.json
+**/google-services.json
 key.properties
 *.log
 # Prebuilt v2 demo binaries (rebuilt by scripts/build-*.sh when Go is present).
@@ -15,6 +18,8 @@ core/v2demo-linux-armhf
 core/v2demo-linux-386
 core/v2demo-windows-amd64.exe
 core/v2demo-windows-arm64.exe
+core/v2demo-windows-386.exe
+core/X-Messenger-GUI-windows-*.exe
 core/v2demo-macos-amd64
 core/v2demo-macos-arm64
 build-info.json

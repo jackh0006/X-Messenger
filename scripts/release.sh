@@ -43,7 +43,10 @@ bash scripts/build-deb.sh armhf "$OUT/X-Messenger-$VER-Linux-armhf.deb" || echo 
 bash scripts/build-tarball.sh amd64 "$OUT/X-Messenger-$VER-Linux-amd64.tar.gz" || echo "warn: amd64 tarball skipped" >&2
 bash scripts/build-tarball.sh arm64 "$OUT/X-Messenger-$VER-Linux-arm64.tar.gz" || echo "warn: arm64 tarball skipped" >&2
 # Windows portable zips (built on Linux via cross-compile; tested on Win10/11)
+# Includes x86 experimental (Node 18 32-bit EOL) + GUI .exe launchers.
 bash scripts/build-windows.sh all || echo "warn: windows zips skipped" >&2
+# Windows .exe stage: GUI launchers are inside ZIPs; per-user setup.exe via NSIS if makensis present.
+bash scripts/build-win-exe.sh all || echo "warn: windows exe/setup skipped" >&2
 for f in "$OUT"/X-Messenger-"$VER"-Windows-*.zip; do
   [ -e "$f" ] && cp -a "$f" "$OUT/" 2>/dev/null || true
 done
@@ -112,10 +115,10 @@ git tag "v$VER"
 git push origin "v$VER"
 gh release create "v$VER" --title "v$VER — stable offline courier" \
   --notes-file /dev/stdin <<EOF
-X Messenger $VER (stable).
+X Messenger $VER (stable, by jackh0006).
 Offline core: loopback-only HTTPS separate window, QR/file/clipboard couriers.
 Android: CAMERA-only, arm32 (armeabi-v7a, Android 9+) + arm64, signed AAB for Play.
-Linux: amd64/arm64/armhf .debs + portable tarballs. Windows 10/11: portable ZIPs (x64/arm64).
+Linux: amd64/arm64/armhf .debs + portable tarballs. Windows 10/11: portable ZIPs (x64/arm64, x86 experimental) with X-Messenger-GUI.exe launchers + per-user setup.exe when makensis runs.
 Same hardened www bundle everywhere (cap sync verified).
 Needs independent audit before high-risk use. See SECURITY.md.
 Verify SHA256SUMS before installing. Play/SmartScreen warnings are expected

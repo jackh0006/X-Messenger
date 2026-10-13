@@ -78,20 +78,49 @@ The Linux GUI opens on `https://127.0.0.1:443` (this device only, zero
 egress; if 443 is taken you are asked for another port). To change
 port/domain/mode: `x-messenger setup` or Settings → Connection.
 
-CLI (`cipherlink version` → current stable):
+### Changing port after install (persisted)
 
 ```bash
-cipherlink encrypt "Meet at the north gate"
-cipherlink decrypt "XM1.…"
+x-messenger gui --port 8443                  # use 8443 from now on
+x-messenger gui --loopback --port 8443       # back to safest offline mode
+x-messenger setup                            # wizard: Port [443] -> Mode 1/2/3 -> Domain
+```
+
+Quit the GUI first — the new port is saved to `gui.json`
+(`~/.local/share/x-messenger/gui.json`, `%APPDATA%\x-messenger` on
+Windows) and used on the next start. In a terminal you get an
+interactive `Choose another port (1024–65535) [8443]` prompt; from a
+launcher you get `Retry with: x-messenger gui --port 8443`. Ports
+`<1024` need elevation (see VPS `setcap` below).
+
+CLI (`cipherlink version` → current stable, by jackh0006):
+
+```bash
+cipherlink encrypt "Meet at the north gate" --to "Amina"
+cipherlink decrypt "XM1.…"                  # XM2 opens via paired session in GUI
 cipherlink profile "Amina" "met in person"
+cipherlink profiles                         # list local labels (max 100)
 cipherlink data export backup.json
-x-messenger setup                 # port + device/LAN/VPS + domain guide
+cipherlink data import backup.json          # validates 512KB / 500 envelopes
+cipherlink data delete --yes                # irreversible, 1-pass overwrite
+cipherlink v2demo                           # terminal handshake→shred demo
+cipherlink version
+cipherlink help
+x-messenger setup [--yes]                   # port + device/LAN/VPS + domain guide
 x-messenger gui --port 8443
+x-messenger gui --loopback                  # revert to offline-only
+x-messenger gui --lan --port 8443           # opt-in LAN (observable)
 x-messenger gui --vps --domain msg.example.com --port 443
+x-messenger gui --cert-info                 # show CA + leaf SHA256/SAN/expiry
+x-messenger gui --trust-ca                  # trust device-local CA once
+x-messenger gui --untrust-ca                # remove device-local CA trust
+x-messenger gui --regen-cert [--lan]        # rotate loopback/LAN cert
 ```
 
 The phrase is always asked **hidden** (never in shell history unless you
-force `--phrase` for scripts).
+force `--phrase` for scripts; `--phrase` warns and is for automation
+only). `--app` is automatic (`chromium --app`, isolated profile), not a
+flag.
 
 ## Features (all platforms same)
 
@@ -113,17 +142,30 @@ force `--phrase` for scripts).
 
 - **This device (default):** `x-messenger gui` → `https://127.0.0.1:443`.
   Zero internet. Safest. If 443 is taken or needs privilege you are asked
-  for another port. Airplane-mode proof in `PUBLISHING.md`.
+  for another port (`1024–65535`, `8443` suggested). Airplane-mode proof in `PUBLISHING.md`.
 - **LAN (opt-in):** `x-messenger gui --lan --port 8443` → encrypted TLS on
   your Wi-Fi, but routers/DPI **see** LAN IP/port/sizes. Compare the cert
-  fingerprint in person (Settings → TLS certificate).
+  fingerprint in person (`x-messenger gui --cert-info`, Settings → TLS certificate).
+  Back to safety: `x-messenger gui --loopback --port 8443`.
 - **My VPS (opt-in):** your domain with normal HTTPS:
   `x-messenger gui --vps --domain msg.example.com --port 443`.
   Port 443 needs one capability:
   `sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))`.
+  Re-run after Node updates; alternatively `systemd AmbientCapabilities=CAP_NET_BIND_SERVICE`
+  or `8443` behind Nginx/Caddy `443 → 8443`.
   Full 5-year-old guide: [`docs/vps-domain-cloudflare.md`](docs/vps-domain-cloudflare.md)
   (DNS grey-cloud, subdomains, certbot, renew). Privacy truth + risk controls:
   [`docs/vps-private-mode.md`](docs/vps-private-mode.md).
+
+### Cert trust / verify / rotate
+
+```bash
+x-messenger gui --cert-info     # CA + leaf SHA256, validity, SAN
+x-messenger gui --trust-ca      # Linux: NSS + system store; Windows: CurrentUser Root; macOS: keychain
+x-messenger gui --untrust-ca    # remove trust again
+x-messenger gui --regen-cert [--lan]
+```
+Compare fingerprints in person before trusting. See Settings → TLS certificate.
 
 ## Android (stays offline)
 
@@ -135,12 +177,14 @@ GitHub ships arm64 + arm32 APKs; Play serves splits from the `.aab`.
 Debug APKs never go to Play — see [PLAY_RELEASE.md](PLAY_RELEASE.md)
 and [docs/store-listing.md](docs/store-listing.md). Privacy: [docs/privacy-policy.md](docs/privacy-policy.md).
 
-## Windows (portable, no admin)
+## Windows (portable, no admin, real `.exe`)
 
-Windows 10 1809+ and 11 (`x64` + `arm64` ZIPs): unzip, ensure Node 20 LTS +
-`openssl` (Git for Windows) on `PATH`, double-click `X-Messenger-GUI.cmd`
-or run `x-messenger.cmd gui` (loopback `https://127.0.0.1:443`, fallback
-`8443`). Data in `%APPDATA%\x-messenger`. SmartScreen “Unknown publisher”
+Windows 10 1809+ and 11 (`x64` + `arm64` ZIPs with `X-Messenger-GUI.exe`,
+`x86` experimental): unzip, ensure Node 20 LTS (`x86`: Node 18 32-bit EOL)
++ `openssl` (Git for Windows) on `PATH`, double-click `X-Messenger-GUI.exe`
+(or `X-Messenger-GUI.cmd` fallback) or run `x-messenger.cmd gui` (loopback
+`https://127.0.0.1:443`, fallback `8443`). Per-user `*-setup.exe` installer
+(no admin) when published. Data in `%APPDATA%\x-messenger`. SmartScreen “Unknown publisher”
 on first run is expected for sideloads — verify `SHA256SUMS`, use the signed
 setup when published. Full steps: [`WINDOWS_GUIDE.md`](WINDOWS_GUIDE.md).
 
@@ -224,8 +268,11 @@ Each release ships:
 | `X-Messenger-<ver>-Linux-armhf.deb` | Debian/Ubuntu desktop (ARM32: Pi 3/Zero 2) |
 | `X-Messenger-<ver>-Linux-amd64.tar.gz` | Portable Linux (Fedora/Arch/NixOS, no root) |
 | `X-Messenger-<ver>-Linux-arm64.tar.gz` | Portable Linux ARM64 |
-| `X-Messenger-<ver>-Windows-x64.zip` | Windows 10/11 portable (x64, no admin) — see `WINDOWS_GUIDE.md` |
-| `X-Messenger-<ver>-Windows-arm64.zip` | Windows on ARM portable |
+| `X-Messenger-<ver>-Linux-armhf.tar.gz` | Portable Linux ARM32 |
+| `X-Messenger-<ver>-Windows-x64.zip` | Windows 10/11 portable (x64, no admin, `X-Messenger-GUI.exe`) — see `WINDOWS_GUIDE.md` |
+| `X-Messenger-<ver>-Windows-arm64.zip` | Windows on ARM portable (`X-Messenger-GUI.exe`) |
+| `X-Messenger-<ver>-Windows-x86.zip` | Windows 32-bit experimental (Node 18 32-bit EOL, `X-Messenger-GUI.exe`) |
+| `X-Messenger-<ver>-Windows-*-setup.exe` | Per-user installer (no admin) when `makensis` runs — otherwise ZIP only |
 | `X-Messenger-<ver>-Android-arm64.apk` | Android arm64 (CAMERA-only, Android 7+/9+ tested) |
 | `X-Messenger-<ver>-Android-arm32.apk` | Android arm32 (armeabi-v7a, Android 9-era phones) |
 | `X-Messenger-<ver>-Android.aab` | Play upload bundle (signed, CAMERA-only) |

@@ -2,9 +2,12 @@
 Version=1.0
 Type=Application
 Name=X Messenger
-Comment=Offline encrypted QR messenger
-Exec=x-messenger gui
+Comment=Offline encrypted QR messenger (by jackh0006)
+Exec=/usr/bin/x-messenger gui
+TryExec=/usr/bin/x-messenger
 Icon=x-messenger
 Terminal=false
-Categories=Utility;Network;
+Categories=Network;InstantMessaging;
+Keywords=qr;encrypt;offline;messenger;
 StartupNotify=true
+StartupWMClass=x-messenger

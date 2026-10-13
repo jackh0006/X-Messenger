@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# X Messenger post-install: refresh launcher + icon caches, clean stale user launchers.
+set -e
+update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+# Remove stale per-user launcher that shadows the system entry with a broken Exec.
+# Only removes the exact broken pattern (Exec pointing at non-existent ~/.local/bin).
+for _home in /home/* /root; do
+  _f="$_home/.local/share/applications/x-messenger.desktop"
+  if [ -f "$_f" ]; then
+    if grep -q "\.local/bin/x-messenger" "$_f" 2>/dev/null && [ ! -x "$_home/.local/bin/x-messenger" ]; then
+      rm -f "$_f" || true
+    fi
+  fi
+done
+exit 0

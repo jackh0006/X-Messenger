@@ -28,3 +28,23 @@ test('fingerprint uses ordered spec transcript, not sorted blobs', () => {
 test('v2 codes warn when too large for cameras', () => {
   assert.ok(js.includes('~2.3k') || js.includes('large for cameras'), 'QR size warning must exist');
 });
+
+test('v1.4.2 P0: view-once never hits disk, high-value gate live, XM2 restore accepted', () => {
+  assert.ok(js.includes('filter(m => !m.viewOnce)'), 'vaultSnapshot must filter view-once');
+  assert.ok(js.includes('const highValue = !!('), 'high-value must be captured before clearing');
+  assert.ok(!js.includes("if ($('#highValue') && $('#highValue').checked && phrase.length"), 'dead high-value check must be gone');
+  assert.ok(js.includes("e.sealed.startsWith('XM1.') || e.sealed.startsWith('XM2.')"), 'restore must accept XM1 and XM2');
+});
+
+test('v1.4.2 P0: delete-all and forgot call v2unpair and clear clipboard', () => {
+  assert.ok(js.includes('v2unpair()'), 'wipe paths must unpair v2');
+  assert.ok(js.includes("xm2call('forget'"), 'WASM handles must be forgotten');
+  assert.ok(js.includes('clearClipboardNow()'), 'wipe/lock must clear clipboard now');
+});
+
+test('v1.4.2: export capped, QR copy-first, v2 length pre-check, templates exist', () => {
+  assert.ok(js.includes('.filter(m => m.sealed).slice(-500)'), 'export must cap at 500');
+  assert.ok(js.includes('too big for reliable QR'), 'large payloads must skip QR render');
+  assert.ok(js.includes('Too long for v2 QR bucket'), 'v2 thread must pre-check length');
+  assert.ok(js.includes('insertTemplate') && js.includes('tplLoc'), 'QR-only templates must exist');
+});

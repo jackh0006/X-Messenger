@@ -41,8 +41,18 @@ document.addEventListener('visibilitychange', () => {
     try { if (vaultMode === 'open') vaultLock(); } catch {}
   }
 });
+let clearClipboardTimer = null;
 function clearClipboardLater(label) {
-  setTimeout(async () => { try { await navigator.clipboard.writeText(''); } catch {} }, 30000);
+  try { if (clearClipboardTimer) clearTimeout(clearClipboardTimer); } catch {}
+  clearClipboardTimer = setTimeout(async () => {
+    try { await navigator.clipboard.writeText(''); } catch {}
+    clearClipboardTimer = null;
+  }, 30000);
+}
+function clearClipboardNow() {
+  try { if (clearClipboardTimer) clearTimeout(clearClipboardTimer); } catch {}
+  clearClipboardTimer = null;
+  try { const p = navigator.clipboard.writeText(''); if (p && p.catch) p.catch(() => {}); } catch {}
 }
 function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date()); }
 // Session message store (1.0.8). Plaintext lives ONLY here, in this page.
@@ -92,7 +102,8 @@ let vaultPhrase = '';
 let vaultOffered = false;
 let vaultSaveTimer = null;
 function vaultSnapshot() {
-  return chatStore.list.slice(-VAULT_CAP).map(m => ({ id: m.id, dir: m.dir, text: m.text || '', sealed: m.sealed || '', via: m.via || '', to: m.to || '', ts: m.ts || Date.now(), viewOnce: !!m.viewOnce, expiresAt: m.expiresAt || 0, replyTo: m.replyTo || '', starred: !!m.starred, fwd: !!m.fwd }));
+  // View-once must never hit disk, even encrypted: filter before seal.
+  return chatStore.list.filter(m => !m.viewOnce).slice(-VAULT_CAP).map(m => ({ id: m.id, dir: m.dir, text: m.text || '', sealed: m.sealed || '', via: m.via || '', to: m.to || '', ts: m.ts || Date.now(), viewOnce: false, expiresAt: 0, replyTo: m.replyTo || '', starred: !!m.starred, fwd: !!m.fwd }));
 }
 function scheduleVaultSave() {
   if (vaultMode !== 'open') return;
@@ -105,7 +116,7 @@ async function flushVaultSave() {
   try {
     localStorage.setItem(VAULT_KEY, await vaultSeal(vaultSnapshot(), vaultPhrase));
     return true;
-  } catch { return false; }
+  } catch { try { const el = document.getElementById('chatStatus'); if (el) el.textContent = 'History too large to lock (cap reached — delete old messages).'; } catch {} return false; }
 }
 function vaultRestore(items) {
   for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
@@ -146,15 +157,17 @@ async function vaultChange(oldP, p1, p2) {
   await vaultOpen(blob, oldP); // verifies the old passphrase without touching memory
   if (!p1 || p1.length < 8) throw new Error('Use at least 8 characters for the new passphrase.');
   if (p1 !== p2) throw new Error('New passphrases do not match.');
+  const prev = vaultPhrase;
   vaultPhrase = p1;
   const ok = await flushVaultSave();
-  if (!ok) throw new Error('Could not re-lock history.');
+  if (!ok) { vaultPhrase = prev; throw new Error('Could not re-lock history.'); }
 }
 async function vaultLock() {
   await flushVaultSave();
   vaultPhrase = '';
   vaultMode = localStorage.getItem(VAULT_KEY) ? 'locked' : 'none';
   try { clearTimeout(vaultSaveTimer); } catch {}
+  try { clearClipboardNow(); } catch {}
   wipeSession();
   renderChat();
 }
@@ -210,6 +223,8 @@ function openVaultDialog(mode) {
       if (!confirm('Wipe ALL X Messenger data from this device (vault history, labels, settings)? This cannot be undone.')) return;
       vaultMode = 'none'; vaultPhrase = '';
       try { clearTimeout(vaultSaveTimer); } catch {}
+      try { v2unpair(); } catch {}
+      pendingText = ''; try { await navigator.clipboard.writeText(''); } catch {}
       wipeSession(); currentPayload = '';
       [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} });
       activeProfileId = null; threadFor = null;
@@ -503,13 +518,26 @@ async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
   $('#payloadSize').textContent = `${bytes} B sealed`;
-  if (bytes > 2900) {
-    $('#payloadSize').textContent += ' — too big for QR, use .xmsg file';
+  if (bytes > 2000) {
+    $('#payloadSize').textContent += ' — too big for reliable QR, use Copy or .xmsg file';
+    try { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); } catch {}
+  } else {
+    try { await QRCode.toCanvas($('#qrCanvas'), payload, { width: 296, margin: 2, errorCorrectionLevel: 'L', color: { dark: '#17212b', light: '#ffffff' } }); } catch { try { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); } catch {} $('#payloadSize').textContent += ' — QR failed, use .xmsg file'; }
   }
-  try { await QRCode.toCanvas($('#qrCanvas'), payload, { width: 296, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#17212b', light: '#ffffff' } }); } catch { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); $('#payloadSize').textContent += ' — QR failed, use .xmsg file'; }
   openModal('#transferDialog');
 }
 $('#sendMessage').onclick = () => { pendingText = $('#messageInput').value.trim(); if (pendingText) openModal('#phraseDialog'); };
+try {
+  const composer = document.querySelector('.composer');
+  if (composer && !document.getElementById('tplBar')) {
+    const bar = document.createElement('div'); bar.id = 'tplBar'; bar.className = 'chat-bar';
+    bar.innerHTML = '<button id="tplLoc" class="icon-button" title="Insert location template">⌖</button><button id="tplContact" class="icon-button" title="Insert contact template">▤</button><button id="tplSos" class="icon-button" title="Insert emergency template">SOS</button>';
+    composer.after(bar);
+    document.getElementById('tplLoc').onclick = () => insertTemplate('location');
+    document.getElementById('tplContact').onclick = () => insertTemplate('contact');
+    document.getElementById('tplSos').onclick = () => insertTemplate('sos');
+  }
+} catch {}
 function startChat() { if (profiles().length) { setView('users'); } else try { profileDialog.showModal(); } catch {} }
 try {
   const hv = document.createElement('label');
@@ -521,7 +549,7 @@ try {
   vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
   $('#sealTransfer').before(vo);
 } catch {}
-$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2threadActive()) { $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if ($('#highValue') && $('#highValue').checked && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); scheduleVaultSave(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); const highValue = !!($('#highValue') && $('#highValue').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2threadActive()) { if (new Blob([text]).size > 1000) { $('#phraseInput').setCustomValidity('Too long for v2 QR bucket (~1000 bytes max). Shorten or use XM1 file.'); $('#phraseInput').reportValidity(); return; } $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if (highValue && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); scheduleVaultSave(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
 $('#openReceive').onclick = () => openModal('#receiveDialog');
 $('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2', to: 'v2-paired' }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
@@ -583,6 +611,21 @@ try {
   + 'html[data-x-theme="dark"] .msg-menu{background:#1a2636;color:#e9eef7}html[data-x-theme="dark"] .msg-menu button:hover{background:#2a3a4f}html[data-x-theme="dark"] .msg-quote{background:#5488d822}';
   document.head.append(chatCss);
 } catch {}
+// QR-only equipment templates (no radio, no new crypto): location,
+// contact card, and emergency short codes seal as ordinary text.
+// Mirrors Briar/Bridgefy UX without Bluetooth/WiFi permissions.
+function insertTemplate(kind) {
+  try {
+    const el = document.getElementById('messageInput');
+    if (!el) return;
+    const cur = el.value ? el.value.trim() + '\n' : '';
+    if (kind === 'location') el.value = cur + 'geo:0.0000,0.0000 (replace with lat,lon — typed only, no map fetch)';
+    else if (kind === 'contact') el.value = cur + 'contact: Name — +00-000-000 (typed label only, not verified)';
+    else if (kind === 'sos') el.value = cur + 'SOS — meet at: (fill place + time)';
+    try { el.focus(); } catch {}
+    try { if (typeof updateMsgCount === 'function') updateMsgCount(); } catch {}
+  } catch {}
+}
 function updateMsgCount() { try { const n = $('#messageInput').value.length; msgCount.textContent = `${n} / 900`; msgCount.style.color = n > 900 ? '#c85360' : ''; } catch {} }
 $('#messageInput').addEventListener('input', updateMsgCount); updateMsgCount();
 $('#messageInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#sendMessage').click(); } });
@@ -758,7 +801,7 @@ function saveSettings(next) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(
 applySettings();
 $('#themeSetting').onchange = event => saveSettings({ ...readSettings(), theme: event.target.value });
 $('#fontSetting').oninput = event => saveSettings({ ...readSettings(), fontSize: Number(event.target.value) });
-function localBackup() { const data = {}; [PROFILE_KEY, SETTINGS_KEY].forEach(key => { const value = localStorage.getItem(key); if (value !== null) data[key] = value; }); const envelopes = chatStore.list.filter(m => m.sealed).map(m => ({ sealed: m.sealed, via: m.via, to: m.to || '', dir: m.dir || 'incoming', ts: m.ts })); return { format: 'x-messenger-local-backup-v2', exportedAt: new Date().toISOString(), data, envelopes }; }
+function localBackup() { const data = {}; [PROFILE_KEY, SETTINGS_KEY].forEach(key => { const value = localStorage.getItem(key); if (value !== null) data[key] = value; }); const envelopes = chatStore.list.filter(m => m.sealed).slice(-500).map(m => ({ sealed: m.sealed, via: m.via, to: m.to || '', dir: m.dir || 'incoming', ts: m.ts })); return { format: 'x-messenger-local-backup-v2', exportedAt: new Date().toISOString(), data, envelopes }; }
 function openEnvelope(id) {
   const m = chatStore.list.find(x => x.id === id);
   if (!m || !m.sealed) return;
@@ -769,8 +812,8 @@ function openEnvelope(id) {
 }
 $('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded (labels, settings, sealed envelopes — never plaintext or phrases). Store it securely.'; };
 $('#restoreData').onclick = () => $('#restoreFile').click();
-$('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !e.sealed.startsWith('XM1.') || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: e.dir === 'outgoing' ? 'outgoing' : 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', to: typeof e.to === 'string' ? e.to.slice(0, 60) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); scheduleVaultSave(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
-$('#deleteData').onclick = async () => { if (!confirm('Delete ALL X Messenger data from this device (vault history, labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; vaultMode = 'none'; vaultPhrase = ''; try { clearTimeout(vaultSaveTimer); } catch {} wipeSession(); currentPayload = ''; [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: vault history, ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
+$('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !(e.sealed.startsWith('XM1.') || e.sealed.startsWith('XM2.')) || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: e.dir === 'outgoing' ? 'outgoing' : 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', to: typeof e.to === 'string' ? e.to.slice(0, 60) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); scheduleVaultSave(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
+$('#deleteData').onclick = async () => { if (!confirm('Delete ALL X Messenger data from this device (vault history, labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; vaultMode = 'none'; vaultPhrase = ''; try { clearTimeout(vaultSaveTimer); } catch {} try { v2unpair(); } catch {} try { if (typeof xm2forgetAll === 'function') await xm2forgetAll(); } catch {} pendingText = ''; pendingForward = false; pendingRekey = null; try { replyTarget = null; document.getElementById('replyBar')?.remove(); } catch {} wipeSession(); currentPayload = ''; try { clearClipboardNow(); } catch {} [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: vault history, ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
 $('#openSecurityGuide').onclick = () => { settingDialog.close(); openModal('#securityDialog'); };
 function validDomainUi(d) { return typeof d === 'string' && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\.[a-z]{2,}$/i.test(d.trim()); }
 async function refreshConn() {
@@ -947,8 +990,17 @@ function v2status() {
   } catch {}
 }
 function v2unpair() {
+  const forget = [v2send, v2recv];
+  try { if (window._v2me && window._v2me.handle) forget.push(window._v2me.handle); } catch {}
   v2send = null; v2recv = null; v2paired = false; v2fpText = '';
   try { window._v2me = null; window._v2peer = null; window._v2ready = null; } catch {}
+  // Best-effort WASM forget (maps die with page reload anyway).
+  try {
+    for (const h of forget) {
+      if (!h) continue;
+      try { const p = xm2call('forget', { handle: h }); if (p && p.catch) p.catch(() => {}); } catch {}
+    }
+  } catch {}
   try {
     const items = profiles();
     const mate = items.find(p => p.id === 'v2-paired');

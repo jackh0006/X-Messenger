@@ -1,16 +1,19 @@
-# Use X Messenger on Windows (10 1809+ and 11, portable, no admin)
+# Use X Messenger on Windows (10 1809+ and 11, portable, no admin, by jackh0006)
 
 Supported: **Windows 10 version 1809+ (build 17763) and Windows 11**, `x64`
-primary, `arm64` secondary. Windows 7/8.1 are **not supported** (Node 18+,
+primary, `arm64` secondary, `x86` experimental. Windows 7/8.1 are **not supported** (Node 18+,
 WebView2/Chromium `--app`, and TLS 1.2+ OS defaults require Windows 10+).
 
 ## Option A — portable ZIP (recommended for testing)
 
-1. Install **Node.js 20 LTS** from `nodejs.org` (check `node --version` ≥ 18).
+1. Install **Node.js 20 LTS** (`x64`/`arm64`) from `nodejs.org` (check `node --version` ≥ 18).
+   `x86` experimental: Node 18 32-bit (EOL, insecure — prefer `x64`).
 2. Install **Git for Windows** (provides `openssl.exe` for the first-run
    device-local CA) **or** Windows OpenSSL, and ensure it is on `PATH`.
-3. Unzip `X-Messenger-<ver>-Windows-x64.zip` (or `-arm64.zip` on ARM PCs).
-4. Double-click `X-Messenger-GUI.cmd`, or run:
+3. Unzip `X-Messenger-<ver>-Windows-x64.zip` (or `-arm64.zip` on ARM PCs,
+   `-x86.zip` experimental on 32-bit).
+4. Double-click `X-Messenger-GUI.exe` (real `.exe` launcher), or
+   `X-Messenger-GUI.cmd` fallback, or run:
    `x-messenger.cmd gui` → opens `https://127.0.0.1:443` loopback-only HTTPS
    in a separate Edge/Chrome `--app` window. If 443 needs elevation you are
    asked for another port (use `8443`).
