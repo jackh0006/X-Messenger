@@ -135,8 +135,10 @@ test('plaintext never persists: localStorage holds labels/settings/sealed vault 
     // `key` is only allowed as the loop variable constrained to the two
     // label/settings constants (restore path); literals must be allow-listed.
     // VAULT_KEY holds sealed ciphertext (XMV1 envelopes), never plaintext.
+    // V2BROKEN_KEY holds a non-secret '1' marker (v2 engine stood down after
+    // a page-engine crash); it is cleared by delete-all like everything else.
     const loopOk = key === 'key' && js.includes('for (const key of [PROFILE_KEY, SETTINGS_KEY])');
-    const ok = key === 'PROFILE_KEY' || key === 'SETTINGS_KEY' || key === 'VAULT_KEY' || key === "'x-messenger-why-seen-v1'" || loopOk;
+    const ok = key === 'PROFILE_KEY' || key === 'SETTINGS_KEY' || key === 'VAULT_KEY' || key === "'x-messenger-why-seen-v1'" || key === 'V2BROKEN_KEY' || loopOk;
     assert.ok(ok, `localStorage may only store labels/settings/sealed vault, found: ${key}`);
   }
   assert.ok(js.includes('Plaintext lives ONLY here'), 'session-only store contract must be documented');

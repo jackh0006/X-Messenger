@@ -226,7 +226,7 @@ function openVaultDialog(mode) {
       try { v2unpair(); } catch {}
       pendingText = ''; try { await navigator.clipboard.writeText(''); } catch {}
       wipeSession(); currentPayload = '';
-      [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} });
+      [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1', V2BROKEN_KEY].forEach(key => { try { if (key) localStorage.removeItem(key); } catch {} });
       activeProfileId = null; threadFor = null;
       try { renderProfiles(); applySettings({}); } catch {}
       try { d.close(); } catch {}
@@ -527,17 +527,6 @@ async function presentTransfer(payload) {
   openModal('#transferDialog');
 }
 $('#sendMessage').onclick = () => { pendingText = $('#messageInput').value.trim(); if (pendingText) openModal('#phraseDialog'); };
-try {
-  const composer = document.querySelector('.composer');
-  if (composer && !document.getElementById('tplBar')) {
-    const bar = document.createElement('div'); bar.id = 'tplBar'; bar.className = 'chat-bar';
-    bar.innerHTML = '<button id="tplLoc" class="icon-button" title="Insert location template">⌖</button><button id="tplContact" class="icon-button" title="Insert contact template">▤</button><button id="tplSos" class="icon-button" title="Insert emergency template">SOS</button>';
-    composer.after(bar);
-    document.getElementById('tplLoc').onclick = () => insertTemplate('location');
-    document.getElementById('tplContact').onclick = () => insertTemplate('contact');
-    document.getElementById('tplSos').onclick = () => insertTemplate('sos');
-  }
-} catch {}
 function startChat() { if (profiles().length) { setView('users'); } else try { profileDialog.showModal(); } catch {} }
 try {
   const hv = document.createElement('label');
@@ -611,21 +600,6 @@ try {
   + 'html[data-x-theme="dark"] .msg-menu{background:#1a2636;color:#e9eef7}html[data-x-theme="dark"] .msg-menu button:hover{background:#2a3a4f}html[data-x-theme="dark"] .msg-quote{background:#5488d822}';
   document.head.append(chatCss);
 } catch {}
-// QR-only equipment templates (no radio, no new crypto): location,
-// contact card, and emergency short codes seal as ordinary text.
-// Mirrors Briar/Bridgefy UX without Bluetooth/WiFi permissions.
-function insertTemplate(kind) {
-  try {
-    const el = document.getElementById('messageInput');
-    if (!el) return;
-    const cur = el.value ? el.value.trim() + '\n' : '';
-    if (kind === 'location') el.value = cur + 'geo:0.0000,0.0000 (replace with lat,lon — typed only, no map fetch)';
-    else if (kind === 'contact') el.value = cur + 'contact: Name — +00-000-000 (typed label only, not verified)';
-    else if (kind === 'sos') el.value = cur + 'SOS — meet at: (fill place + time)';
-    try { el.focus(); } catch {}
-    try { if (typeof updateMsgCount === 'function') updateMsgCount(); } catch {}
-  } catch {}
-}
 function updateMsgCount() { try { const n = $('#messageInput').value.length; msgCount.textContent = `${n} / 900`; msgCount.style.color = n > 900 ? '#c85360' : ''; } catch {} }
 $('#messageInput').addEventListener('input', updateMsgCount); updateMsgCount();
 $('#messageInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#sendMessage').click(); } });
@@ -713,6 +687,7 @@ function renderPairPane(box) {
   const row = document.createElement('div'); row.className = 'view-actions';
   const open = document.createElement('button'); open.className = 'primary-large view-cta'; open.textContent = v2paired ? '◈ Pairing steps' : '◈ Start pairing';
   open.onclick = () => { buildPairDialog(); v2status(); openModal('#pairDialog'); };
+  if (v2standDown(box)) { open.disabled = true; open.title = 'v2 engine is off on this system browser — ordinary sealed transfers (XM1) work'; }
   row.append(open);
   if (v2paired) {
     const fp = document.createElement('div'); fp.className = 'fingerprint';
@@ -813,7 +788,7 @@ function openEnvelope(id) {
 $('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded (labels, settings, sealed envelopes — never plaintext or phrases). Store it securely.'; };
 $('#restoreData').onclick = () => $('#restoreFile').click();
 $('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !(e.sealed.startsWith('XM1.') || e.sealed.startsWith('XM2.')) || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: e.dir === 'outgoing' ? 'outgoing' : 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', to: typeof e.to === 'string' ? e.to.slice(0, 60) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); scheduleVaultSave(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
-$('#deleteData').onclick = async () => { if (!confirm('Delete ALL X Messenger data from this device (vault history, labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; vaultMode = 'none'; vaultPhrase = ''; try { clearTimeout(vaultSaveTimer); } catch {} try { v2unpair(); } catch {} try { if (typeof xm2forgetAll === 'function') await xm2forgetAll(); } catch {} pendingText = ''; pendingForward = false; pendingRekey = null; try { replyTarget = null; document.getElementById('replyBar')?.remove(); } catch {} wipeSession(); currentPayload = ''; try { clearClipboardNow(); } catch {} [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1'].forEach(key => { try { localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: vault history, ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
+$('#deleteData').onclick = async () => { if (!confirm('Delete ALL X Messenger data from this device (vault history, labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; vaultMode = 'none'; vaultPhrase = ''; try { clearTimeout(vaultSaveTimer); } catch {} try { v2unpair(); } catch {} try { if (typeof xm2forgetAll === 'function') await xm2forgetAll(); } catch {} pendingText = ''; pendingForward = false; pendingRekey = null; try { replyTarget = null; document.getElementById('replyBar')?.remove(); } catch {} wipeSession(); currentPayload = ''; try { clearClipboardNow(); } catch {} [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1', V2BROKEN_KEY].forEach(key => { try { if (key) localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: vault history, ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
 $('#openSecurityGuide').onclick = () => { settingDialog.close(); openModal('#securityDialog'); };
 function validDomainUi(d) { return typeof d === 'string' && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\.[a-z]{2,}$/i.test(d.trim()); }
 async function refreshConn() {
@@ -1036,6 +1011,34 @@ function v2banner(show) {
     } else if (!show && bar) bar.remove();
   } catch {}
 }
+// v2 engine crash flag: after the page engine dies on the experimental v2
+// call (proven on some system WebKit builds: WEBKIT_WEB_PROCESS_CRASHED),
+// the native shell reloads with ?v2crashed=1. Remember it on this device and
+// stand v2 down with an honest notice instead of crashing again. Ordinary
+// XM1 transfers never touch the v2 engine. Retry is explicit and informed.
+const V2BROKEN_KEY = 'x-messenger-v2-broken';
+let v2broken = false;
+try {
+  if (new URLSearchParams(location.search).get('v2crashed') === '1') {
+    try { localStorage.setItem(V2BROKEN_KEY, '1'); } catch {}
+  }
+  v2broken = localStorage.getItem(V2BROKEN_KEY) === '1';
+} catch {}
+function v2retry() { try { localStorage.removeItem(V2BROKEN_KEY); } catch {} v2broken = false; try { location.href = location.pathname; } catch {} }
+function v2standDown(box) {
+  if (!v2broken) return false;
+  try {
+    if (document.getElementById('v2BrokenNotice')) return true;
+    const n = document.createElement('div');
+    n.className = 'security-ribbon'; n.id = 'v2BrokenNotice';
+    n.textContent = '◆ v2 pairing is off on this system browser: its page engine stops when the experimental v2 engine runs. Ordinary sealed transfers (XM1) work fully. ';
+    const btn = document.createElement('button');
+    btn.className = 'ghost-button'; btn.textContent = 'Try v2 again'; btn.onclick = v2retry;
+    n.append(btn);
+    box.prepend(n);
+  } catch {}
+  return true;
+}
 // Pairing ceremony (spec §2): two QR scans + out-loud fingerprint.
 // Helpers: b64url decode to bytes for canonical ordering.
 function _b64d(s) {
@@ -1196,6 +1199,19 @@ function buildPairDialog() {
   document.body.append(d);
   d.querySelector('[data-close]').onclick = () => d.close();
   v2status();
+  if (v2broken) {
+    try {
+      const mc = d.querySelector('.modal-content');
+      const n = document.createElement('p');
+      n.className = 'subtle'; n.id = 'v2BrokenDialog';
+      n.textContent = 'v2 engine is off on this system browser (page engine stops). Ordinary sealed transfers work. ';
+      const rb = document.createElement('button');
+      rb.className = 'ghost-button'; rb.textContent = 'Try v2 again'; rb.onclick = v2retry;
+      n.append(rb);
+      mc.prepend(n);
+      ['v2Step1', 'v2Step2', 'v2Step3', 'v2Step4'].forEach(id => { const b = d.querySelector('#' + id); if (b) { b.disabled = true; b.title = 'v2 engine is off on this system browser'; } });
+    } catch {}
+  }
   d.querySelector('#v2Step1').onclick = v2pair;
   d.querySelector('#v2Step2').onclick = v2pairContinue;
   d.querySelector('#v2Step3').onclick = v2pairFp;

@@ -42,9 +42,10 @@ test('v1.4.2 P0: delete-all and forgot call v2unpair and clear clipboard', () =>
   assert.ok(js.includes('clearClipboardNow()'), 'wipe/lock must clear clipboard now');
 });
 
-test('v1.4.2: export capped, QR copy-first, v2 length pre-check, templates exist', () => {
+test('v1.4.2: export capped, QR copy-first, v2 length pre-check, no template buttons', () => {
   assert.ok(js.includes('.filter(m => m.sealed).slice(-500)'), 'export must cap at 500');
   assert.ok(js.includes('too big for reliable QR'), 'large payloads must skip QR render');
   assert.ok(js.includes('Too long for v2 QR bucket'), 'v2 thread must pre-check length');
-  assert.ok(js.includes('insertTemplate') && js.includes('tplLoc'), 'QR-only templates must exist');
+  assert.ok(!js.includes('insertTemplate') && !js.includes('tplLoc') && !js.includes('tplSos'), 'location/contact/SOS template buttons removed (offline app)');
+  assert.ok(js.includes('v2crashed') && js.includes('x-messenger-v2-broken'), 'v2 crash flag must stand v2 down with notice');
 });

@@ -10,6 +10,14 @@ import os
 import sys
 import urllib.parse
 
+# Stability first: GPU compositing crashes some systems' WebKit page engines
+# (proven here: NVIDIA + nouveau => dead white view seconds after load;
+# software rendering soaks clean). This chat UI is light DOM, so default to
+# software compositing. Override with X_MESSENGER_GPU=1 if your stack is good.
+# Must precede any WebKit use.
+if os.environ.get("X_MESSENGER_GPU") != "1":
+    os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -176,6 +184,7 @@ class Window(Adw.ApplicationWindow):
                 self.set_content(self.web)
         else:
             self.set_content(self.web)
+        self._page_url = url
         self.web.load_uri(url)
 
     def _toggle_fullscreen(self, *_args):
@@ -359,7 +368,17 @@ class Window(Adw.ApplicationWindow):
     def _crash_response(self, dlg, resp):
         try:
             if resp == "reload":
-                self.web.reload()
+                # Reload with a crash flag so the page can stand v2 down with
+                # an honest notice instead of crashing again on retry.
+                try:
+                    base = self._page_url or ""
+                except Exception:
+                    base = ""
+                if base:
+                    sep = "&" if "?" in base else "?"
+                    self.web.load_uri(base + sep + "v2crashed=1")
+                else:
+                    self.web.reload()
         except Exception:
             pass
 

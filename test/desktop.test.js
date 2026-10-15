@@ -68,9 +68,9 @@ test('linux native shell: window chrome with move/close/fullscreen', () => {
   assert.ok(gui.includes('_toggle_fullscreen') && gui.includes('F11'), 'shell must offer a fullscreen toggle');
 });
 
-test('linux native shell: crashed page engine offers reload, template bar styled', () => {
+test('linux native shell: software compositing default, crash reload carries v2 flag', () => {
   const gui = read('bin/cipherlink-gui');
+  assert.ok(gui.includes('WEBKIT_DISABLE_COMPOSITING_MODE'), 'shell must default to software compositing (GPU crashes kill the page)');
   assert.ok(gui.includes('web-process-terminated') && gui.includes('_crash_response'), 'shell must recover a crashed page engine with reload');
-  const css = read('style.css');
-  assert.ok(css.includes('.chat-bar'), 'template bar (location/contact/SOS) must be styled in the composer');
+  assert.ok(gui.includes('v2crashed=1'), 'crash reload must carry the v2 flag');
 });
