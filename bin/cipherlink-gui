@@ -167,7 +167,19 @@ class Window(Adw.ApplicationWindow):
             try:
                 fp = certificate.get_fingerprint_sha256() or ""
             except Exception:
-                pass
+                fp = ""
+            if not fp:
+                try:
+                    import base64 as _b64
+                    import hashlib as _hl
+                    pem = certificate.get_property("certificate-pem")
+                    b64 = "".join(
+                        line.strip() for line in pem.splitlines() if "-----" not in line
+                    )
+                    der = _b64.b64decode(b64)
+                    fp = ":".join("%02X" % b for b in _hl.sha256(der).digest())
+                except Exception:
+                    fp = ""
             detail = ""
             try:
                 detail = str(errors) if errors is not None else ""
@@ -177,12 +189,18 @@ class Window(Adw.ApplicationWindow):
                 print("TLS error on %s: %s fp=%s" % (failing_uri, detail, fp or "unknown"), file=sys.stderr)
             except Exception:
                 pass
-            dlg = Gtk.AlertDialog.new(
-                "Certificate problem\n\n%s\n\nSHA256: %s\n%s\n\n"
-                "Compare with: x-messenger gui --cert-info (in person). "
-                "If it does not match exactly, close and investigate." % (failing_uri, fp or "unknown", detail)
-            )
-            dlg.show(self)
+            try:
+                dlg = Adw.MessageDialog.new(
+                    self,
+                    "Certificate problem",
+                    "%s\n\nSHA256: %s\n%s\n\nCompare with: x-messenger gui "
+                    "--cert-info (in person). If it does not match exactly, "
+                    "close and investigate." % (failing_uri, fp or "unknown", detail),
+                )
+                dlg.add_response("close", "Close")
+                dlg.present()
+            except Exception:
+                pass
         except Exception:
             pass
         return True  # stop load, fail closed
@@ -191,12 +209,38 @@ class Window(Adw.ApplicationWindow):
         try:
             from gi.repository import WebKit as _WK
             if decision_type == _WK.PolicyDecisionType.NAVIGATION_ACTION:
+                uri = ""
                 try:
-                    req = decision.get_request()
+                    # WebKitGTK 6.0 GI: no get_request() on the decision;
+                    # go through get_navigation_action().get_request().
+                    try:
+                        req = decision.get_request()
+                    except Exception:
+                        req = None
+                    if req is None:
+                        try:
+                            nav = decision.get_navigation_action()
+                            req = nav.get_request() if nav else None
+                        except Exception:
+                            req = None
                     uri = req.get_uri() if req else ""
                 except Exception:
                     uri = ""
+                if not uri:
+                    try:
+                        print("Blocked navigation with unknown URL (fail closed).", file=sys.stderr)
+                    except Exception:
+                        pass
+                    try:
+                        decision.ignore()
+                    except Exception:
+                        pass
+                    return True
                 if not is_loopback_https(uri or ""):
+                    try:
+                        print("Blocked off-device navigation (fail closed): %s" % uri, file=sys.stderr)
+                    except Exception:
+                        pass
                     try:
                         decision.ignore()
                     except Exception:
