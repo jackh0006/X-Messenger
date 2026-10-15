@@ -193,9 +193,10 @@ class Window(Adw.ApplicationWindow):
                 dlg = Adw.MessageDialog.new(
                     self,
                     "Certificate problem",
-                    "%s\n\nSHA256: %s\n%s\n\nCompare with: x-messenger gui "
-                    "--cert-info (in person). If it does not match exactly, "
-                    "close and investigate." % (failing_uri, fp or "unknown", detail),
+                    "%s\n\nLeaf SHA256: %s\n%s\n\nCompare with the FIRST fingerprint "
+                    "from: x-messenger gui --cert-info (the Cert line, compared "
+                    "in person — not the Local CA line). If it does not match "
+                    "exactly, close and investigate." % (failing_uri, fp or "unknown", detail),
                 )
                 dlg.add_response("close", "Close")
                 dlg.present()
