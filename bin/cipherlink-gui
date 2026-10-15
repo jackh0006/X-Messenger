@@ -91,6 +91,15 @@ class Window(Adw.ApplicationWindow):
             self.web.connect("load-failed-with-tls-errors", self.on_tls_error)
         except Exception:
             pass
+        # Never navigate off loopback https (no remote URLs, ever).
+        try:
+            self.web.connect("decide-policy", self.on_decide)
+        except Exception:
+            pass
+        try:
+            self.web.connect("load-failed", self.on_load_failed)
+        except Exception:
+            pass
         try:
             self.web.connect("download-started", self.on_download)
         except Exception:
@@ -100,24 +109,25 @@ class Window(Adw.ApplicationWindow):
         self.web.load_uri(url)
 
     def on_permission(self, web, request):
+        # Deny-by-default. Camera: video-only + loopback https origin only.
         try:
-            # UserMedia (camera) only, video-only, loopback origin only.
             if request.__class__.__name__ == "UserMediaPermissionRequest":
                 try:
                     is_video = request.is_for_video_device()
-                except Exception:
-                    is_video = True
-                try:
                     is_audio = request.is_for_audio_device()
                 except Exception:
-                    is_audio = False
-                origin = ""
+                    try:
+                        request.deny()
+                    except Exception:
+                        pass
+                    return True
                 try:
                     origin = request.get_security_origin().to_string()
+                    u = urllib.parse.urlparse(origin)
+                    ok_origin = u.scheme == "https" and (u.hostname or "").lower() in ("127.0.0.1", "localhost", "::1")
                 except Exception:
-                    pass
-                ok_origin = origin.startswith("https://127.0.0.1") or origin.startswith("https://localhost")
-                if is_video and not is_audio and ok_origin:
+                    ok_origin = False
+                if is_video is True and is_audio is False and ok_origin:
                     request.allow()
                 else:
                     request.deny()
@@ -137,22 +147,75 @@ class Window(Adw.ApplicationWindow):
                 fp = certificate.get_fingerprint_sha256() or ""
             except Exception:
                 pass
+            detail = ""
+            try:
+                detail = str(errors) if errors is not None else ""
+            except Exception:
+                pass
+            try:
+                print("TLS error on %s: %s fp=%s" % (failing_uri, detail, fp or "unknown"), file=sys.stderr)
+            except Exception:
+                pass
             dlg = Gtk.AlertDialog.new(
-                "Certificate problem\n\n%s\n\nSHA256: %s\n\n"
+                "Certificate problem\n\n%s\n\nSHA256: %s\n%s\n\n"
                 "Compare with: x-messenger gui --cert-info (in person). "
-                "If it does not match exactly, close and investigate." % (failing_uri, fp or "unknown")
+                "If it does not match exactly, close and investigate." % (failing_uri, fp or "unknown", detail)
             )
             dlg.show(self)
         except Exception:
             pass
         return True  # stop load, fail closed
 
+    def on_decide(self, web, decision, decision_type):
+        try:
+            from gi.repository import WebKit as _WK
+            if decision_type == _WK.PolicyDecisionType.NAVIGATION_ACTION:
+                try:
+                    req = decision.get_request()
+                    uri = req.get_uri() if req else ""
+                except Exception:
+                    uri = ""
+                if not is_loopback_https(uri or ""):
+                    try:
+                        decision.ignore()
+                    except Exception:
+                        pass
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def on_load_failed(self, web, load_event, failing_uri, error):
+        try:
+            print("Load failed %s: %s" % (failing_uri, error), file=sys.stderr)
+        except Exception:
+            pass
+        return False
+
     def on_download(self, web, download):
         try:
-            # Save .xmsg / backup files via chooser into Downloads.
+            # Save .xmsg / backup files via chooser, default ~/Downloads.
             chooser = Gtk.FileChooserNative.new(
                 "Save file", self, Gtk.FileChooserAction.SAVE, "_Save", "_Cancel"
             )
+            try:
+                chooser.set_do_overwrite_confirmation(True)
+            except Exception:
+                pass
+            try:
+                dl = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+                if dl:
+                    chooser.set_current_folder(Gio.File.new_for_path(dl))
+            except Exception:
+                pass
+            try:
+                filt = Gtk.FileFilter.new()
+                filt.set_name("X Messenger (.xmsg, .json)")
+                filt.add_pattern("*.xmsg")
+                filt.add_pattern("*.json")
+                chooser.add_filter(filt)
+            except Exception:
+                pass
             try:
                 suggested = download.get_suggested_filename() or "x-messenger-download"
             except Exception:

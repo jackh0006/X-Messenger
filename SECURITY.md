@@ -6,7 +6,7 @@ Report suspected vulnerabilities privately to **jackh109867@gmail.com** with ver
 
 | Version | Supported |
 | --- | --- |
-| 1.4.0 | Yes (current) |
+| 1.5.0 | Yes (current) |
 | older | No — please upgrade and re-test |
 
 ## Protected
