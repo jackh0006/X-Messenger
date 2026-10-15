@@ -136,7 +136,19 @@ function dataCommand() {
   if (action === 'delete') {
     if (!args.includes('--yes')) { console.error('Refusing to delete local CLI data without --yes.'); process.exitCode = 2; return; }
     try { const st = fs.statSync(file); const fd = fs.openSync(file, 'r+'); try { fs.writeSync(fd, Buffer.alloc(Math.min(st.size, 65536), 0), 0, Math.min(st.size, 65536), 0); } finally { fs.closeSync(fd); } } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; } console.log('Deleted local CLI recipient data (overwritten once before removal).'); return;
+    try { fs.unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    // Residue from superseded shells: the legacy Chromium profile (never read
+    // by the native GUI) plus stale server logs/endpoint files. Best-effort;
+    // missing paths are not errors. Message content is unaffected either way:
+    // it only ever exists as AES-256-GCM ciphertext whose keys die in memory.
+    try { fs.rmSync(path.join(plat.appDataDir(), 'chrome-app-profile'), { recursive: true, force: true }); } catch {}
+    try { fs.unlinkSync(path.join(plat.appDataDir(), 'localhost.log')); } catch (error) { if (error && error.code !== 'ENOENT') throw error; }
+    try {
+      for (const f of fs.readdirSync(plat.tlsDir())) {
+        if (/^endpoint-.*\.txt$/.test(f)) { try { fs.unlinkSync(path.join(plat.tlsDir(), f)); } catch {} }
+      }
+    } catch {}
+    console.log('Deleted local CLI recipient data (overwritten once before removal) plus legacy browser profile residue.'); return;
   }
   console.error('Use: cipherlink data export [backup.json] | import backup.json | delete --yes'); process.exitCode = 2;
 }

@@ -27,8 +27,7 @@ test('deb ships postinst and prunes dev docs', () => {
   assert.ok(gi.includes('google-services.json'), 'firebase path must be ignored');
 });
 
-test('windows ships real .exe launchers (by jackh0006), x86 experimental documented', () => {
-  assert.ok(fs.existsSync(path.join(root, 'core/cmd/xm-launcher/main.go')), 'Go launcher source must exist');
+test('windows ships real .exe launchers (by jackh0006), x86 experimental documented', () => {  assert.ok(fs.existsSync(path.join(root, 'core/cmd/xm-launcher/main.go')), 'Go launcher source must exist');
   const wsh = read('scripts/build-windows.sh');
   assert.ok(wsh.includes('X-Messenger-GUI-windows-$label.exe'), 'ZIPs must embed GUI .exe');
   assert.ok(wsh.includes('build_one x86 386'), 'x86 must be built');
@@ -41,6 +40,14 @@ test('windows ships real .exe launchers (by jackh0006), x86 experimental documen
   const guide = read('WINDOWS_GUIDE.md');
   assert.ok(guide.includes('X-Messenger-GUI.exe'), '.exe launcher must be documented');
   assert.ok(guide.includes('x86'), 'x86 experimental must be documented');
+});
+
+test('CLI delete removes legacy residue; VPS fails closed without a domain or cert', () => {
+  const cli = read('bin/cipherlink');
+  assert.ok(cli.includes("chrome-app-profile"), 'data delete must clear the legacy Chromium profile residue');
+  assert.ok(cli.includes("localhost.log"), 'data delete must clear stale server logs');
+  assert.ok(cli.includes('VPS mode needs --domain'), 'VPS without a domain must fail closed with guidance');
+  assert.ok(cli.includes("Missing Let's Encrypt cert"), 'VPS without installed certs must fail closed, never self-sign');
 });
 
 test('no AI/OpenCode builder credit, jackh0006 only', () => {
