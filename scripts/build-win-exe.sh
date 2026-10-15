@@ -30,11 +30,15 @@ build_setup() {
   (cd "$stagedir" && python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall('.')" "$zip")
   local builddir
   builddir="$(find "$stagedir" -maxdepth 1 -name "x-messenger-*-windows-$label" | head -n 1)"
-  [ -n "$builddir" ] || { echo "warning: unexpected ZIP layout $label" >&2; return 0; }
+  # Current ZIPs are flat (app/ + launchers at root); older ones nested the
+  # tree one level down. Accept both, fail closed on neither.
+  if [ -n "$builddir" ]; then :; elif [ -f "$stagedir/app/core.js" ]; then builddir="$stagedir"; else { echo "warning: unexpected ZIP layout $label" >&2; return 0; }; fi
   makensis -DVERSION="$version" -DARCH="$label" -DBUILD_DIR="$builddir" "$project_root/packaging/windows/x-messenger.nsi" || { echo "warning: NSIS $label failed" >&2; return 0; }
   local setup="$project_root/X-Messenger-$version-Windows-$label-setup.exe"
   # NSIS OutFile lands next to the script CWD; normalize into dist/.
-  for f in "$project_root"/*.exe ./X-Messenger-*-setup.exe; do [ -f "$f" ] || continue; mv -f "$f" "$project_root/dist/" 2>/dev/null || true; done
+  # (Relative OutFile resolves against the .nsi file's directory, so sweep
+  # packaging/windows too.)
+  for f in "$project_root"/*.exe ./X-Messenger-*-setup.exe "$project_root/packaging/windows"/X-Messenger-*-setup.exe; do [ -f "$f" ] || continue; mv -f "$f" "$project_root/dist/" 2>/dev/null || true; done
   echo "setup.exe staged for $label (unsigned; verify SHA256SUMS; SmartScreen expected)"
 }
 

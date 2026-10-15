@@ -35,6 +35,9 @@ test('windows ships real .exe launchers (by jackh0006), x86 experimental documen
   assert.ok(fs.existsSync(path.join(root, 'scripts/build-win-exe.sh')), 'exe/setup stage must exist');
   const nsi = read('packaging/windows/x-messenger.nsi');
   assert.ok(nsi.includes('-setup.exe'), 'NSIS setup.exe must be defined');
+  const wexe = read('scripts/build-win-exe.sh');
+  assert.ok(wexe.includes('app/core.js'), 'setup stage must accept the flat ZIP layout (not only nested dirs)');
+  assert.ok(wexe.includes('packaging/windows'), 'setup stage must collect NSIS output next to the .nsi file');
   const guide = read('WINDOWS_GUIDE.md');
   assert.ok(guide.includes('X-Messenger-GUI.exe'), '.exe launcher must be documented');
   assert.ok(guide.includes('x86'), 'x86 experimental must be documented');
