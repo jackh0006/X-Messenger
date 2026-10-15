@@ -67,3 +67,10 @@ test('linux native shell: window chrome with move/close/fullscreen', () => {
   assert.ok(gui.includes('show_end_title_buttons'), 'shell must show close/min/max buttons');
   assert.ok(gui.includes('_toggle_fullscreen') && gui.includes('F11'), 'shell must offer a fullscreen toggle');
 });
+
+test('linux native shell: crashed page engine offers reload, template bar styled', () => {
+  const gui = read('bin/cipherlink-gui');
+  assert.ok(gui.includes('web-process-terminated') && gui.includes('_crash_response'), 'shell must recover a crashed page engine with reload');
+  const css = read('style.css');
+  assert.ok(css.includes('.chat-bar'), 'template bar (location/contact/SOS) must be styled in the composer');
+});

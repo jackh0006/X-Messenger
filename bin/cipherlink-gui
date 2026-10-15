@@ -156,6 +156,15 @@ class Window(Adw.ApplicationWindow):
             self.web.connect("download-started", self.on_download)
         except Exception:
             pass
+        # Crashed page engine: an embedded view with a dead engine renders
+        # white with no error (seen with the experimental v2 WASM engine on
+        # some system WebKit builds; XM1 never touches it). Offer reload
+        # instead of a dead white page. Reload lands on the lock screen;
+        # memory dies with the old process, so nothing leaks by reloading.
+        try:
+            self.web.connect("web-process-terminated", self.on_web_terminated)
+        except Exception:
+            pass
 
         if self._header_bar is not None:
             try:
@@ -307,6 +316,52 @@ class Window(Adw.ApplicationWindow):
         except Exception:
             pass
         return False
+
+    def on_web_terminated(self, web, reason):
+        try:
+            from gi.repository import WebKit as _WK
+            crashed = (reason == _WK.WebProcessTerminationReason.CRASHED)
+        except Exception:
+            crashed = True
+        try:
+            print("Web engine process terminated (crashed=%s); offering reload." % (crashed,), file=sys.stderr)
+        except Exception:
+            pass
+        if not crashed:
+            return
+        try:
+            dlg = Adw.MessageDialog.new(
+                self,
+                "Page engine stopped",
+                "The page engine stopped unexpectedly (seen with the experimental "
+                "v2 engine on some system browsers; ordinary XM1 transfers never "
+                "touch it). Nothing was sent anywhere. Reload to return to the "
+                "lock screen.",
+            )
+            dlg.add_response("reload", "Reload")
+            dlg.add_response("close", "Close")
+            try:
+                dlg.set_default_response("reload")
+            except Exception:
+                pass
+            try:
+                dlg.set_close_response("close")
+            except Exception:
+                pass
+            try:
+                dlg.connect("response", self._crash_response)
+            except Exception:
+                pass
+            dlg.present()
+        except Exception:
+            pass
+
+    def _crash_response(self, dlg, resp):
+        try:
+            if resp == "reload":
+                self.web.reload()
+        except Exception:
+            pass
 
     def on_download(self, web, download):
         try:
