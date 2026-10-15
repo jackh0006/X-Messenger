@@ -60,3 +60,10 @@ test('linux native shell: no Chromium dependency, WebKitGTK only', () => {
   assert.ok(control.includes('gir1.2-webkit'), 'deb must depend on WebKitGTK GI');
   assert.ok(control.includes('python3-gi'), 'deb must depend on python3-gi');
 });
+
+test('linux native shell: window chrome with move/close/fullscreen', () => {
+  const gui = read('bin/cipherlink-gui');
+  assert.ok(gui.includes('HeaderBar'), 'shell must add a header bar (Wayland has no server decorations)');
+  assert.ok(gui.includes('show_end_title_buttons'), 'shell must show close/min/max buttons');
+  assert.ok(gui.includes('_toggle_fullscreen') && gui.includes('F11'), 'shell must offer a fullscreen toggle');
+});

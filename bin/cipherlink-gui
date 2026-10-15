@@ -56,6 +56,37 @@ class Window(Adw.ApplicationWindow):
         super().__init__(application=app, title="X Messenger")
         self.set_default_size(1000, 700)
 
+        # Window chrome: on Wayland there are no server-side decorations,
+        # so without a header bar the window cannot be moved, closed, or
+        # fullscreened. Client-side Adw header bar fixes all three. It is
+        # assembled with the content below (AdwApplicationWindow forbids
+        # set_titlebar, so the bar lives in a ToolbarView top bar).
+        self._header_bar = None
+        try:
+            hb = Adw.HeaderBar()
+            try:
+                hb.set_show_end_title_buttons(True)
+            except Exception:
+                pass
+            try:
+                fs_btn = Gtk.Button.new_from_icon_name("view-fullscreen-symbolic")
+                fs_btn.set_tooltip_text("Toggle fullscreen (F11)")
+                fs_btn.connect("clicked", lambda *_: self._toggle_fullscreen())
+                hb.pack_end(fs_btn)
+            except Exception:
+                pass
+            self._header_bar = hb
+        except Exception:
+            self._header_bar = None
+        try:
+            sc = Gtk.Shortcut.new(
+                Gtk.ShortcutTrigger.parse_string("F11"),
+                Gtk.CallbackAction.new(lambda *_: self._toggle_fullscreen()),
+            )
+            self.add_shortcut(sc)
+        except Exception:
+            pass
+
         # Isolated website data (localStorage vault persists, never shared).
         # This WebKitGTK 6.0 GI exposes only base constructors, so bind the
         # data manager through GObject construct properties with fallbacks.
@@ -126,8 +157,27 @@ class Window(Adw.ApplicationWindow):
         except Exception:
             pass
 
-        self.set_content(self.web)
+        if self._header_bar is not None:
+            try:
+                _tv = Adw.ToolbarView()
+                _tv.add_top_bar(self._header_bar)
+                _tv.set_content(self.web)
+                self.set_content(_tv)
+            except Exception:
+                self.set_content(self.web)
+        else:
+            self.set_content(self.web)
         self.web.load_uri(url)
+
+    def _toggle_fullscreen(self, *_args):
+        try:
+            if self.is_fullscreen():
+                self.unfullscreen()
+            else:
+                self.fullscreen()
+        except Exception:
+            pass
+        return True
 
     def on_permission(self, web, request):
         # Deny-by-default. Camera: video-only + loopback https origin only.
