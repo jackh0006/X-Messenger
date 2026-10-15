@@ -71,6 +71,7 @@ test('linux native shell: window chrome with move/close/fullscreen', () => {
 test('linux native shell: software compositing default, crash reload carries v2 flag', () => {
   const gui = read('bin/cipherlink-gui');
   assert.ok(gui.includes('WEBKIT_DISABLE_COMPOSITING_MODE'), 'shell must default to software compositing (GPU crashes kill the page)');
+  assert.ok(gui.includes('JSC_useBBQJIT'), 'shell must disable the WASM baseline tier (AVX in its probe path kills non-AVX CPUs)');
   assert.ok(gui.includes('web-process-terminated') && gui.includes('_crash_response'), 'shell must recover a crashed page engine with reload');
   assert.ok(gui.includes('v2crashed=1'), 'crash reload must carry the v2 flag');
 });

@@ -17,6 +17,16 @@ import urllib.parse
 # Must precede any WebKit use.
 if os.environ.get("X_MESSENGER_GPU") != "1":
     os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+# The v2 WASM engine needs one more default: Ubuntu's WebKitGTK 2.52 emits
+# AVX in ctiMasmProbeTrampoline on the BBQ-JIT/WASM-OSR path, so any call
+# into the engine kills the page (SIGILL) on CPUs without AVX (proven by
+# kernel traps at one fixed address + isolation matrix: no-op call lives,
+# P-384 keygen dies, JSC_useJIT=0 and JSC_useBBQJIT=0 both survive, and the
+# full loopback pairing passes under useBBQJIT=0). Disabling only the WASM
+# baseline tier keeps every other JIT running, so the cost is WASM warmup
+# time, not peak speed. Override with X_MESSENGER_JSC_BBQ=1 to re-enable.
+if os.environ.get("X_MESSENGER_JSC_BBQ") != "1":
+    os.environ.setdefault("JSC_useBBQJIT", "0")
 
 import gi
 
