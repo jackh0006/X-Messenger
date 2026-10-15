@@ -1,6 +1,6 @@
 {
   "name": "x-messenger-offline",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Open-source offline encrypted QR courier",
   "main": "index.js",
   "bin": {

@@ -1,9 +1,9 @@
-# X Messenger platform roadmap — v1.5.1
+# X Messenger platform roadmap — v1.5.2
 
 This maps the requested app types to what ships today and what needs an
 audited native core first. Nothing here changes the crypto.
 
-## Shipped today (1.5.1)
+## Shipped today (1.5.2)
 
 - Crypto: `AES-256-GCM + PBKDF2-SHA256/600k` in `core.js` only
   (v2 seals, v1 reads). See `SECURITY.md`. No XChaCha20, no Argon2id,
