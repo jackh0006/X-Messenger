@@ -1,4 +1,4 @@
-# X Messenger gateway (optional) — v1.5.0
+# X Messenger gateway (optional) — v1.5.1
 
 The default is the **offline core**: `x-messenger gui` serves
 `https://127.0.0.1:443` loopback-only in a separate `--app` window.

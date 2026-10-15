@@ -1,6 +1,6 @@
 # X Messenger Privacy Policy
 
-Effective: 2026-10-06. App: X Messenger 1.5.0 (`com.jackh0006.xmessenger`).
+Effective: 2026-10-06. App: X Messenger 1.5.1 (`com.jackh0006.xmessenger`).
 
 ## Short version
 
@@ -32,4 +32,4 @@ Security / privacy: jackh109867@gmail.com. Do not send real message contents or 
 
 ## Changes
 
-Material changes will bump the app version and this document together. Current version: 1.5.0 (2026-10-10: QR-only transfers, session messages).
+Material changes will bump the app version and this document together. Current version: 1.5.1 (2026-10-10: QR-only transfers, session messages).

@@ -57,18 +57,39 @@ class Window(Adw.ApplicationWindow):
         self.set_default_size(1000, 700)
 
         # Isolated website data (localStorage vault persists, never shared).
+        # This WebKitGTK 6.0 GI exposes only base constructors, so bind the
+        # data manager through GObject construct properties with fallbacks.
+        ctx = None
         if profile_dir:
             os.makedirs(profile_dir, mode=0o700, exist_ok=True)
-            ctx = WebKit.WebContext.new_with_website_data_directory(profile_dir)
-        else:
-            ctx = WebKit.WebContext.get_default()
+            try:
+                cache_dir = os.path.join(profile_dir, "cache")
+                os.makedirs(cache_dir, mode=0o700, exist_ok=True)
+                dm0 = WebKit.WebsiteDataManager(
+                    base_data_directory=profile_dir,
+                    base_cache_directory=cache_dir,
+                )
+                try:
+                    ctx = WebKit.WebContext.new_with_website_data_manager(dm0)
+                except Exception:
+                    ctx = None
+            except Exception:
+                ctx = None
+        if ctx is None:
+            try:
+                ctx = WebKit.WebContext.new()
+            except Exception:
+                ctx = WebKit.WebContext.get_default()
         try:
             dm = ctx.get_website_data_manager()
             dm.set_favicon_enabled(False)
         except Exception:
             pass
 
-        self.web = WebKit.WebView.new_with_context(ctx)
+        try:
+            self.web = WebKit.WebView(web_context=ctx)
+        except Exception:
+            self.web = WebKit.WebView.new()
         settings = self.web.get_settings()
         try:
             settings.set_enable_webaudio(False)

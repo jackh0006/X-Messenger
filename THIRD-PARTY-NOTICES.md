@@ -1,4 +1,4 @@
-# Third-party notices (1.5.0)
+# Third-party notices (1.5.1)
 
 X Messenger bundles/depends on the following open-source packages.
 Their licenses apply to their own files. Built by jackh0006; no AI
