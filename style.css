@@ -50,3 +50,9 @@ html[data-x-theme="dark"] .conn-pill[data-on="1"]{background:#12352c;color:#6fd5
 @media(max-width:720px){
 .message-bubble{max-width:calc(100% - 40px)}
 }
+.qr-pager{display:flex;gap:8px;align-items:center;justify-content:center;margin:10px 0 0;flex-wrap:wrap}
+.qr-pager span{font-size:11px;color:#5d6e8c}
+.qr-pager button{border:1px solid #e0e6ee;background:#fff;color:#5d6e8c;border-radius:9px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+.qr-pager button:disabled{opacity:.4;cursor:default}
+html[data-x-theme="dark"] .qr-pager span{color:#9fb0c4}
+html[data-x-theme="dark"] .qr-pager button{background:#1a2636;border-color:#33475e;color:#c6d3e6}

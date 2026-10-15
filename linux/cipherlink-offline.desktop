@@ -3,8 +3,13 @@ Version=1.0
 Type=Application
 Name=X Messenger
 Comment=Offline encrypted QR messenger
-Exec=/home/mhh06/cipherlink/bin/cipherlink gui
-Icon=/home/mhh06/cipherlink/assets/icon.svg
+# Template only: install-linux-launcher.sh generates the real entry with
+# absolute paths for the current checkout. Do not hand-edit this file.
+Exec=cipherlink gui
+TryExec=cipherlink
+Icon=cipherlink-offline
 Terminal=false
-Categories=Network;Utility;
+Categories=Network;InstantMessaging;
+Keywords=qr;encrypt;offline;messenger;
 StartupNotify=true
+StartupWMClass=X-Messenger

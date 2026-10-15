@@ -11,7 +11,7 @@ Report suspected vulnerabilities privately to **jackh109867@gmail.com** with ver
 
 ## Protected
 
-With uncompromised endpoints, a strong unique phrase exchanged separately, and correct platform Web Crypto, an `XM1` payload protects message confidentiality and detects alteration. TLS 1.2+ protects the road (loopback/LAN/VPS); XM1 protects the letter end-to-end.
+With uncompromised endpoints, a strong unique phrase exchanged separately, and correct platform Web Crypto, an `XM1` payload protects message confidentiality and detects alteration. TLS 1.2+ protects the road (loopback/LAN/VPS); XM1 protects the letter end-to-end. Payloads too long for one reliable QR are shown as numbered `XMQ1` parts carrying the same ciphertext; only a complete set reassembles, and alteration still fails at XM1 authentication.
 
 ## Not protected
 

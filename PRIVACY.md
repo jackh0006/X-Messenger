@@ -19,7 +19,7 @@ X Messenger collects nothing, uploads nothing, and has no server. Camera frames 
 
 ## What leaves the device
 
-Only what **you** choose to show: a QR image, copied `XM1.` text, or an `.xmsg` file you hand over offline. The shared phrase is never included in that payload.
+Only what **you** choose to show: a QR image (one code, or numbered parts for long messages — scan every part), copied `XM1.` text, or an `.xmsg` file you hand over offline. The shared phrase is never included in that payload.
 
 ## Backups and deletion
 

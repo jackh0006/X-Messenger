@@ -24,6 +24,8 @@ test('dark theme covers fonts and key surfaces', () => {
   assert.ok(js.includes('html[data-x-theme="dark"] .composer'), 'dark composer missing');
   assert.ok(js.includes('--x-font-size'), 'font scaling var missing');
   assert.ok(js.includes('Math.min(20, Math.max(14,'), 'font clamp missing');
+  assert.ok(js.includes("matchMedia('(prefers-color-scheme: dark)')") && js.includes("addEventListener('change', followSystemTheme)"), 'system theme must follow the OS live');
+  assert.ok(js.includes('themeMediaArmed'), 'theme listener must arm exactly once');
 });
 
 test('message caps are consistent', () => {

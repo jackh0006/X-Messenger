@@ -135,7 +135,88 @@
       try { ciphertext.fill(0); salt.fill(0); iv.fill(0); } catch {}
     }
   }
-  root.XMessengerCrypto = { encryptText, decryptText, vaultSeal, vaultOpen, ITERATIONS, MAX_TEXT_CHARS, MAX_TEXT_BYTES, MAX_PAYLOAD_CHARS, MAX_VAULT_BYTES, VERSION };
+  // ---- Multi-part QR framing (same primitives, no new crypto)
+  // Large sealed payloads do not fit one reliable QR. qrSplit(payload)
+  // cuts any transfer text (XM1./XMV1./v2 JSON) into numbered XMQ1 chunks;
+  // qrAssemble(collect(chunks...)) restores the exact original string.
+  // Chunks carry no keys, phrases, or plaintext beyond what the sealed
+  // payload already holds. Assembly is strict: same id, 1..n all present,
+  // no duplicates, bounded counts and sizes — anything else fails closed.
+  const QR_CHUNK_CHARS = 1200;
+  const QR_CHUNK_MAX_PARTS = 64;
+  const QR_CHUNK_PREFIX = 'XMQ1.';
+  function qrSplit(payload) {
+    if (typeof payload !== 'string' || payload.length === 0) throw new Error('Nothing to split.');
+    if (payload.startsWith(QR_CHUNK_PREFIX)) throw new Error('Already a QR part.');
+    if (payload.length > MAX_VAULT_BYTES) throw new Error('Transfer too large to split.');
+    const parts = [];
+    for (let i = 0; i < payload.length; i += QR_CHUNK_CHARS) {
+      parts.push(payload.slice(i, i + QR_CHUNK_CHARS));
+    }
+    if (parts.length > QR_CHUNK_MAX_PARTS) throw new Error('Transfer has too many QR parts.');
+    const id = b64url(randomBytes(16));
+    return parts.map((slice, k) => {
+      const body = encoder.encode(slice);
+      const out = QR_CHUNK_PREFIX + id + '.' + (k + 1) + '.' + parts.length + '.' + b64url(body);
+      body.fill(0);
+      return out;
+    });
+  }
+
+  function qrParseChunk(text) {
+    if (typeof text !== 'string' || !text.startsWith(QR_CHUNK_PREFIX)) throw new Error('Not a QR part.');
+    const rest = text.slice(QR_CHUNK_PREFIX.length);
+    // Format: XMQ1.<id>.<i>.<n>.<b64 slice>
+    const first = rest.indexOf('.');
+    if (first < 0) throw new Error('Unsupported QR part.');
+    const second = rest.indexOf('.', first + 1);
+    if (second < 0) throw new Error('Unsupported QR part.');
+    const third = rest.indexOf('.', second + 1);
+    if (third < 0) throw new Error('Unsupported QR part.');
+    const id = rest.slice(0, first);
+    const i = Number(rest.slice(first + 1, second));
+    const n = Number(rest.slice(second + 1, third));
+    const slice = rest.slice(third + 1);
+    if (!/^[A-Za-z0-9\-_]{20,24}$/.test(id)) throw new Error('Unsupported QR part.');
+    if (!Number.isInteger(i) || !Number.isInteger(n) || i < 1 || n < 2 || n > QR_CHUNK_MAX_PARTS || i > n) throw new Error('Unsupported QR part.');
+    if (slice.length === 0 || slice.length > 1800) throw new Error('Unsupported QR part.');
+    let bytes;
+    try {
+      bytes = fromB64url(slice);
+    } catch {
+      throw new Error('Unsupported QR part.');
+    }
+    if (bytes.length === 0 || bytes.length > 1400) throw new Error('Unsupported QR part.');
+    let out;
+    try {
+      out = decoder.decode(bytes);
+    } finally {
+      bytes.fill(0);
+    }
+    return { id, i, n, slice: out };
+  }
+
+  function qrAssemble(chunks) {
+    if (!Array.isArray(chunks) || chunks.length < 2) throw new Error('Need at least 2 QR parts.');
+    if (chunks.length > QR_CHUNK_MAX_PARTS) throw new Error('Too many QR parts.');
+    const parsed = chunks.map(qrParseChunk);
+    const id = parsed[0].id;
+    const n = parsed[0].n;
+    if (parsed.length !== n) throw new Error(`Incomplete code: ${parsed.length} of ${n} parts.`);
+    const seen = new Set();
+    const ordered = new Array(n);
+    for (const p of parsed) {
+      if (p.id !== id || p.n !== n) throw new Error('Mixed QR codes: scan one code at a time.');
+      if (seen.has(p.i)) throw new Error('Duplicate QR part.');
+      seen.add(p.i);
+      ordered[p.i - 1] = p.slice;
+    }
+    const out = ordered.join('');
+    if (out.length === 0 || out.length > MAX_VAULT_BYTES) throw new Error('Unsupported QR part.');
+    if (out.startsWith(QR_CHUNK_PREFIX)) throw new Error('Unsupported QR part.');
+    return out;
+  }
+  root.XMessengerCrypto = { encryptText, decryptText, vaultSeal, vaultOpen, qrSplit, qrParseChunk, qrAssemble, ITERATIONS, MAX_TEXT_CHARS, MAX_TEXT_BYTES, MAX_PAYLOAD_CHARS, MAX_VAULT_BYTES, QR_CHUNK_CHARS, QR_CHUNK_MAX_PARTS, VERSION };
 
   // ---- Encrypted on-device history vault (same primitives, no new crypto)
   // vaultSeal(value, phrase) -> 'XMV1.…' (salt+nonce fresh per seal).

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 let pendingText = '', currentPayload = '', currentVia = 'qr', scanning = false, scanTimer;
 const $ = (s) => document.querySelector(s);
-const { encryptText, decryptText, vaultSeal, vaultOpen } = XMessengerCrypto;
+const { encryptText, decryptText, vaultSeal, vaultOpen, qrSplit, qrParseChunk, qrAssemble, QR_CHUNK_CHARS } = XMessengerCrypto;
 const donations = [
   ['Bitcoin', 'bc1q8t0fn2yrsy4lh3m0pz34uj27t8vxjeavkjym83'], ['DOGE', 'D6ZdMQ7mHGGmuH9prpZ2zjpnG5Q3WVRDtC'],
   ['Ethereum / USDT ERC20 / BNB', '0xdad428900a4359be8f76b3062df34211582e09eb'], ['TRX / USDT TRC20', 'TMpb6RNTuGNM1eTakm9kjds1mRTPYYJesf'],
@@ -518,13 +518,65 @@ async function presentTransfer(payload) {
   currentPayload = payload;
   const bytes = new Blob([payload]).size;
   $('#payloadSize').textContent = `${bytes} B sealed`;
-  if (bytes > 2000) {
-    $('#payloadSize').textContent += ' — too big for reliable QR, use Copy or .xmsg file';
+  try {
+    const st = await qrShowPayload($('#qrCanvas'), payload, { width: 296, ec: 'L' });
+    if (st.parts.length > 1) $('#payloadSize').textContent += ` — ${st.parts.length} QR parts, scan every part`;
+  } catch {
     try { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); } catch {}
-  } else {
-    try { await QRCode.toCanvas($('#qrCanvas'), payload, { width: 296, margin: 2, errorCorrectionLevel: 'L', color: { dark: '#17212b', light: '#ffffff' } }); } catch { try { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); } catch {} $('#payloadSize').textContent += ' — QR failed, use .xmsg file'; }
+    $('#payloadSize').textContent += ' — QR failed, use Copy or .xmsg file';
   }
   openModal('#transferDialog');
+}
+
+// Multi-part QR pager: payloads above one reliable QR are shown as numbered
+// parts the recipient scans in any order (XMQ1 framing in core.js).
+// currentPayload, Copy and .xmsg always carry the full payload.
+function qrPagerFor(canvas) {
+  let row = canvas._qrPager;
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'qr-pager';
+    row.style.display = 'none';
+    const prev = document.createElement('button');
+    prev.type = 'button'; prev.textContent = '‹ Prev';
+    const label = document.createElement('span');
+    const next = document.createElement('button');
+    next.type = 'button'; next.textContent = 'Next ›';
+    row.append(prev, label, next);
+    row._prev = prev; row._label = label; row._next = next;
+    canvas.after(row);
+    canvas._qrPager = row;
+  }
+  return row;
+}
+
+async function qrShowPayload(canvas, payload, opts = {}) {
+  const width = opts.width || 296, ec = opts.ec || 'L';
+  const row = qrPagerFor(canvas);
+  const parts = payload.length > QR_CHUNK_CHARS ? qrSplit(payload) : [payload];
+  const state = { parts, i: 0 };
+  const draw = async () => {
+    await QRCode.toCanvas(canvas, state.parts[state.i], { width, margin: 2, errorCorrectionLevel: ec });
+    if (state.parts.length > 1) {
+      row.style.display = '';
+      row._label.textContent = `Part ${state.i + 1}/${state.parts.length} — scan every part`;
+      row._prev.disabled = state.i === 0;
+      row._next.disabled = state.i === state.parts.length - 1;
+    } else {
+      row.style.display = 'none';
+    }
+  };
+  row._prev.onclick = async () => { if (state.i > 0) { state.i--; try { await draw(); } catch {} } };
+  row._next.onclick = async () => { if (state.i < state.parts.length - 1) { state.i++; try { await draw(); } catch {} } };
+  canvas._qrState = state;
+  try {
+    await draw();
+  } catch {
+    try { canvas.getContext('2d').clearRect(0, 0, canvas.width || width, canvas.height || width); } catch {}
+    row.style.display = 'none';
+    throw new Error('QR render failed');
+  }
+  return state;
 }
 $('#sendMessage').onclick = () => { pendingText = $('#messageInput').value.trim(); if (pendingText) openModal('#phraseDialog'); };
 function startChat() { if (profiles().length) { setView('users'); } else try { profileDialog.showModal(); } catch {} }
@@ -539,8 +591,8 @@ try {
   $('#sealTransfer').before(vo);
 } catch {}
 $('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); const highValue = !!($('#highValue') && $('#highValue').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2threadActive()) { if (new Blob([text]).size > 1000) { $('#phraseInput').setCustomValidity('Too long for v2 QR bucket (~1000 bytes max). Shorten or use XM1 file.'); $('#phraseInput').reportValidity(); return; } $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if (highValue && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); scheduleVaultSave(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
-$('#openReceive').onclick = () => openModal('#receiveDialog');
-$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2', to: 'v2-paired' }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
+$('#openReceive').onclick = () => { qrCollectorReset(); openModal('#receiveDialog'); };
+$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } let sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XMQ1.')) { const chunks = sealed.split(/\s+/).filter(s => s.startsWith('XMQ1.')); try { sealed = qrAssemble(chunks); status.textContent = `Assembled ${chunks.length} QR parts — enter the phrase to decrypt.`; } catch (e) { throw new Error((e && e.message) || 'Incomplete QR code: paste every part.'); } } if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2', to: 'v2-paired' }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
 $('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
 $('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -559,8 +611,49 @@ try {
   }
 } catch {};
 for (const [name, address] of donations) { const row = document.createElement('button'); row.className = 'donate-row'; row.innerHTML = `<strong>${name}</strong><code>${address}</code><span>Copy</span>`; row.onclick = async () => { try { await navigator.clipboard.writeText(address); clearClipboardLater(); row.querySelector('span').textContent = 'Copied'; setTimeout(() => row.querySelector('span').textContent = 'Copy', 1200); } catch {} }; $('#donateList').append(row); }
-async function scanLoop() { const video = $('#scanner'), canvas = document.createElement('canvas'), context = canvas.getContext('2d', { willReadFrequently: true }); const tick = () => { if (!scanning) return; if (video.readyState >= 2) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; context.drawImage(video, 0, 0); const found = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' }); const data = found && found.data ? found.data : ''; if (data.startsWith('XM1.') || data.startsWith('XM2.')) { $('#payloadInput').value = data; $('#receiveStatus').textContent = 'QR received. Enter the phrase to decrypt (v2 envelopes need a paired contact).'; stopScanner(); return; } if (data.trim().startsWith('{')) { try { const o = JSON.parse(data); const isCode = o && o.ecdh && o.mlkem && o.half; const isCt = o && o.ct; if (isCode || isCt) { buildPairDialog(); document.getElementById(isCode ? 'v2PeerCode' : 'v2PeerCt').value = data; const st = document.getElementById('v2PairStatus'); if (st) st.textContent = isCode ? 'Their code scanned — press 2 · Encapsulate.' : 'Their ciphertext scanned — press 3 · Compare fingerprint.'; stopScanner(); try { closeAll(); } catch {} openModal('#pairDialog'); return; } } catch {} } } scanTimer = requestAnimationFrame(tick); }; tick(); }
-async function startScanner() { try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
+// Multi-part QR ingest: XMQ1 parts arrive in any order (or repeat while the
+// camera lingers). Collect by code id; only a complete set assembles, and
+// the result flows through the exact same handlers as a single scan.
+let qrCollector = null;
+function qrCollectorReset() { qrCollector = null; }
+function ingestQrPart(text) {
+  const p = qrParseChunk(text);
+  if (!qrCollector || qrCollector.id !== p.id) qrCollector = { id: p.id, chunks: new Map() };
+  qrCollector.chunks.set(p.i, text);
+  return { id: p.id, n: p.n, have: qrCollector.chunks.size };
+}
+function qrTakeAssembled() {
+  if (!qrCollector) throw new Error('No QR parts yet.');
+  const out = qrAssemble([...qrCollector.chunks.values()]);
+  qrCollector = null;
+  return out;
+}
+function ingestScannedText(data) {
+  if (data.startsWith('XM1.') || data.startsWith('XM2.')) {
+    $('#payloadInput').value = data;
+    $('#receiveStatus').textContent = 'QR received. Enter the phrase to decrypt (v2 envelopes need a paired contact).';
+    stopScanner();
+    return;
+  }
+  if (data.trim().startsWith('{')) {
+    try {
+      const o = JSON.parse(data);
+      const isCode = o && o.ecdh && o.mlkem && o.half;
+      const isCt = o && o.ct;
+      if (isCode || isCt) {
+        buildPairDialog(); document.getElementById(isCode ? 'v2PeerCode' : 'v2PeerCt').value = data;
+        const st = document.getElementById('v2PairStatus');
+        if (st) st.textContent = isCode ? 'Their code scanned — press 2 · Encapsulate.' : 'Their ciphertext scanned — press 3 · Compare fingerprint.';
+        stopScanner();
+        try { closeAll(); } catch {}
+        openModal('#pairDialog');
+        return;
+      }
+    } catch {}
+  }
+}
+async function scanLoop() { const video = $('#scanner'), canvas = document.createElement('canvas'), context = canvas.getContext('2d', { willReadFrequently: true }); const tick = () => { if (!scanning) return; if (video.readyState >= 2) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; context.drawImage(video, 0, 0); const found = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' }); const data = found && found.data ? found.data : ''; if (data.startsWith('XMQ1.')) { try { const st = ingestQrPart(data); if (st.have >= st.n) { const full = qrTakeAssembled(); stopScanner(); ingestScannedText(full); return; } $('#receiveStatus').textContent = `QR part ${st.have}/${st.n} received — keep scanning the other parts.`; } catch (e) { $('#receiveStatus').textContent = (e && e.message) || 'Unsupported QR part.'; } } else ingestScannedText(data); } scanTimer = requestAnimationFrame(tick); }; tick(); }
+async function startScanner() { try { qrCollectorReset(); const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
 function stopScanner() { scanning = false; cancelAnimationFrame(scanTimer); const stream = $('#scanner').srcObject; if (stream) stream.getTracks().forEach(t => t.stop()); $('#scanner').srcObject = null; }
 $('#startCamera').onclick = startScanner;
 const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join(' '); $('#fingerprint').textContent = id.toUpperCase(); $('#deviceId').textContent = `ID ${id.slice(0, 9).toUpperCase()}`; $('#copyFingerprint').onclick = async () => { try { await navigator.clipboard.writeText(id.toUpperCase()); clearClipboardLater(); } catch {} };
@@ -772,6 +865,15 @@ settingStyles.textContent = 'html{font-size:var(--x-font-size,16px)}'
 + '.contact h1,.protocol-stack strong{font-size:calc(var(--x-font-size,16px)*0.875)}'; document.head.append(settingStyles);
 function readSettings() { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; } }
 function applySettings(settings = readSettings()) { const theme = ['system', 'light', 'dark'].includes(settings.theme) ? settings.theme : 'system'; const resolved = theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme; document.documentElement.dataset.xTheme = resolved; try { document.querySelector('meta[name="theme-color"]').content = resolved === 'dark' ? '#0c131d' : '#17212b'; } catch {} const size = Math.min(20, Math.max(14, Number(settings.fontSize) || 16)); document.documentElement.style.setProperty('--x-font-size', `${size}px`); $('#themeSetting').value = theme; $('#fontSetting').value = size; $('#fontValue').textContent = `${size}px`; }
+// System theme follows the OS live: re-resolve only while the user keeps
+// System selected (explicit light/dark never move). Font size is re-read
+// from stored settings every time, so it can never reset on theme change.
+let themeMediaArmed = false;
+try {
+  const themeMedia = matchMedia('(prefers-color-scheme: dark)');
+  const followSystemTheme = () => { try { if ((readSettings().theme || 'system') === 'system') applySettings(); } catch {} };
+  if (typeof themeMedia.addEventListener === 'function' && !themeMediaArmed) { themeMedia.addEventListener('change', followSystemTheme); themeMediaArmed = true; }
+} catch {}
 function saveSettings(next) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); applySettings(next); }
 applySettings();
 $('#themeSetting').onchange = event => saveSettings({ ...readSettings(), theme: event.target.value });
@@ -1064,11 +1166,11 @@ async function v2pair() {
     crypto.getRandomValues(half);
     window._v2me = { handle: me.handle, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: _b64e(half) };
     const code = JSON.stringify({ v: 2, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: window._v2me.half });
-    await QRCode.toCanvas($('#v2MyQr'), code, { width: 220, margin: 2, errorCorrectionLevel: 'M' });
+    const st = await qrShowPayload($('#v2MyQr'), code, { width: 220, ec: 'M' });
     try { document.getElementById('v2MyCodeText').value = code; } catch {}
-    // v2 codes are ~2.3kB (P-384 97B + ML-KEM-1024 1568B + half). Large for
-    // QR-M: if scan fails, use Copy + paste (text path) or .xmsg file.
-    if (code.length > 2000) say('Step 1/4 — code is large for cameras (~2.3k chars). If scan fails, use Copy + paste on the other device. Then paste THEIR code and continue.');
+    // v2 codes are ~2.3kB (P-384 97B + ML-KEM-1024 1568B + half): shown as
+    // 2 QR parts when needed. Copy + paste stays available as fallback.
+    if (st.parts.length > 1) say(`Step 1/4 — code shown in ${st.parts.length} parts: scan every part with the other device, or copy the text below. Then paste THEIR code and continue.`);
     else say('Step 1/4 — let them scan this code, or copy the text below to their device. Then paste THEIR code and continue.');
   } catch (e) { say(`Pairing failed: ${e.message}`); }
 }
@@ -1099,9 +1201,11 @@ async function v2pairContinue() {
     const loM = iAmLo ? me.mlkem : peer.mlkem, hiM = iAmLo ? peer.mlkem : me.mlkem;
     window._v2peer = { ecdh: peer.ecdh, mlkem: peer.mlkem, half: peer.half, iAmLo, sBytes, loE, hiE, loM, hiM, kMe: enc.k, ctMe: enc.ct };
     const myCt = JSON.stringify({ v: 2, ct: enc.ct });
-    await QRCode.toCanvas($('#v2MyCtQr'), myCt, { width: 220, margin: 2, errorCorrectionLevel: 'M' });
+    const ctState = await qrShowPayload($('#v2MyCtQr'), myCt, { width: 220, ec: 'M' });
     try { document.getElementById('v2MyCtText').value = myCt; } catch {}
-    say('Step 2/4 — let them scan YOUR ciphertext code, or copy the text below. Then paste THEIR ciphertext and continue.');
+    say(ctState.parts.length > 1
+      ? `Step 2/4 — ciphertext shown in ${ctState.parts.length} parts: scan every part, or copy the text below. Then paste THEIR ciphertext and continue.`
+      : 'Step 2/4 — let them scan YOUR ciphertext code, or copy the text below. Then paste THEIR ciphertext and continue.');
   } catch (e) { say(`Pairing failed: ${e.message}`); }
 }
 async function v2pairFp() {

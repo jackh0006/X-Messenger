@@ -68,6 +68,16 @@ test('linux native shell: window chrome with move/close/fullscreen', () => {
   assert.ok(gui.includes('_toggle_fullscreen') && gui.includes('F11'), 'shell must offer a fullscreen toggle');
 });
 
+test('linux menu launcher installs for the current checkout and survives a busy port', () => {
+  const inst = read('scripts/install-linux-launcher.sh');
+  assert.ok(inst.includes('StartupWMClass=X-Messenger'), 'menu entry must group the native window');
+  assert.ok(inst.includes('TryExec='), 'menu entry must declare TryExec so a broken install hides instead of dead-clicking');
+  assert.ok(!inst.includes('/home/mhh06'), 'installer must not hardcode a developer machine path');
+  assert.ok(inst.includes('update-desktop-database'), 'installer must refresh the menu cache');
+  const cli = read('bin/cipherlink');
+  assert.ok(cli.includes('8443; p <= 8453'), 'loopback GUI must auto-pick a free port when launched without a TTY');
+});
+
 test('linux native shell: software compositing default, crash reload carries v2 flag', () => {
   const gui = read('bin/cipherlink-gui');
   assert.ok(gui.includes('WEBKIT_DISABLE_COMPOSITING_MODE'), 'shell must default to software compositing (GPU crashes kill the page)');

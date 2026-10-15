@@ -6,7 +6,8 @@ Nothing leaves the device. Use that unless you have a reason not to.
 
 The **gateway** is opt-in. It serves the same local bundle over TLS so a
 second device on your network — or your own server — can open it. The
-messages themselves stay XM1 end-to-end encrypted; the gateway only moves
+messages themselves stay XM1 end-to-end encrypted (long payloads travel as
+numbered XMQ1 QR parts holding the same ciphertext); the gateway only moves
 ciphertext. IP/domain, port, timing and sizes stay observable — see below.
 
 ## Pick one (like picking shoes)

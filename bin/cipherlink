@@ -433,10 +433,26 @@ async function openGui() {
     probe = await isPortFree(port, bind === 'loopback' ? '127.0.0.1' : undefined);
     if (!probe.ok) { console.error(`Port ${port} also unavailable (${probe.code}). Free it and retry.`); process.exitCode = 1; return; }
   } else if (!probe.ok) {
-    console.error(`Port ${port} unavailable (${probe.code}). Retry with: x-messenger gui --port 8443`);
-    if (port < 1024) console.error(`Privileged port: ${plat.privilegedPortHint()}`);
-    process.exitCode = 1;
-    return;
+    if (bind === 'loopback' && wantPort === undefined) {
+      // Menu/launcher launches have no TTY to ask on: quietly take the next
+      // free loopback port instead of dying silently. Never persisted, so an
+      // explicit --port or a saved preference always wins next time.
+      for (let p = 8443; p <= 8453 && !probe.ok; p++) {
+        if (p === port) continue;
+        const t = await isPortFree(p, '127.0.0.1');
+        if (t.ok) {
+          console.warn(`Port ${port} unavailable (${probe.code}); using ${p} on this device.`);
+          port = p;
+          probe = { ok: true };
+        }
+      }
+    }
+    if (!probe.ok) {
+      console.error(`Port ${port} unavailable (${probe.code}). Retry with: x-messenger gui --port 8443`);
+      if (port < 1024) console.error(`Privileged port: ${plat.privilegedPortHint()}`);
+      process.exitCode = 1;
+      return;
+    }
   }
   let key, cert;
   if (bind === 'vps') {
