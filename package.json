@@ -1,0 +1,46 @@
+{
+  "name": "x-messenger-offline",
+  "version": "1.5.2",
+  "description": "Open-source offline encrypted QR courier",
+  "main": "index.js",
+  "bin": {
+    "cipherlink": "bin/cipherlink"
+  },
+  "scripts": {
+    "start": "npm run gui",
+    "test": "node --test test/crypto.test.js test/offline.test.js test/ui-invariants.test.js test/messages.test.js test/pair.test.js test/desktop.test.js test/qrparts.test.js",
+    "build:web": "node scripts/build-web.js",
+    "check:wasm": "node scripts/check-wasm-pair.js",
+    "android:setup": "npm run android:sync && npx cap open android",
+    "android:sync": "npm run build:web && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:apk:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "android:aab": "npm run android:sync && cd android && ./gradlew bundleRelease",
+    "build:deb": "bash scripts/build-deb.sh",
+    "build:tarball": "bash scripts/build-tarball.sh",
+    "build:windows": "bash scripts/build-windows.sh",
+    "gui": "node bin/cipherlink gui",
+    "linux:install": "bash scripts/install-linux-launcher.sh"
+  },
+  "license": "MIT",
+  "author": "jackh0006",
+  "keywords": [
+    "offline",
+    "encrypted",
+    "qr",
+    "messenger",
+    "privacy"
+  ],
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "browserify": "^17.0.1"
+  }
+}

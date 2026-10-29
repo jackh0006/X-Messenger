@@ -1,0 +1,6 @@
+{
+  "appId": "com.jackh0006.xmessenger",
+  "appName": "X Messenger",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}

@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# X Messenger native GUI shell (by jackh0006).
+# GTK4 + libadwaita + WebKitGTK 6.0. No Chrome/Chromium required.
+# Loads the loopback-only https://127.0.0.1:PORT endpoint served by server.js.
+# Usage: cipherlink-gui <endpoint-url> [--profile-dir DIR]
+# Security: loopback https only, deny-by-default camera, isolated data store,
+# fail-closed TLS (pinned device-local CA fingerprint compare, no bypass).
+import os
+import sys
+import urllib.parse
+
+# Stability first: GPU compositing crashes some systems' WebKit page engines
+# (proven here: NVIDIA + nouveau => dead white view seconds after load;
+# software rendering soaks clean). This chat UI is light DOM, so default to
+# software compositing. Override with X_MESSENGER_GPU=1 if your stack is good.
+# Must precede any WebKit use.
+if os.environ.get("X_MESSENGER_GPU") != "1":
+    os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+# The v2 WASM engine needs one more default: Ubuntu's WebKitGTK 2.52 emits
+# AVX in ctiMasmProbeTrampoline on the BBQ-JIT/WASM-OSR path, so any call
+# into the engine kills the page (SIGILL) on CPUs without AVX (proven by
+# kernel traps at one fixed address + isolation matrix: no-op call lives,
+# P-384 keygen dies, JSC_useJIT=0 and JSC_useBBQJIT=0 both survive, and the
+# full loopback pairing passes under useBBQJIT=0). Disabling only the WASM
+# baseline tier keeps every other JIT running, so the cost is WASM warmup
+# time, not peak speed. Override with X_MESSENGER_JSC_BBQ=1 to re-enable.
+if os.environ.get("X_MESSENGER_JSC_BBQ") != "1":
+    os.environ.setdefault("JSC_useBBQJIT", "0")
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+gi.require_version("WebKit", "6.0")
+from gi.repository import Adw, Gio, GLib, Gtk, WebKit  # noqa: E402
+
+
+def parse_args(argv):
+    url = None
+    profile = None
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a == "--profile-dir" and i + 1 < len(argv):
+            profile = argv[i + 1]
+            i += 2
+        elif a in ("--help", "-h", "help"):
+            print("X Messenger GUI shell (by jackh0006)")
+            print("Opens the offline GUI in a native window. No Chrome required.")
+            print("Usage: cipherlink-gui <https://127.0.0.1:PORT> [--profile-dir DIR]")
+            sys.exit(0)
+        elif not a.startswith("--") and url is None:
+            url = a
+            i += 1
+        else:
+            i += 1
+    return url, profile
+
+
+def is_loopback_https(url):
+    try:
+        u = urllib.parse.urlparse(url)
+        if u.scheme != "https":
+            return False
+        host = (u.hostname or "").lower()
+        return host in ("127.0.0.1", "localhost", "::1")
+    except Exception:
+        return False
+
+
+class Window(Adw.ApplicationWindow):
+    def __init__(self, app, url, profile_dir):
+        super().__init__(application=app, title="X Messenger")
+        self.set_default_size(1000, 700)
+
+        # Window chrome: on Wayland there are no server-side decorations,
+        # so without a header bar the window cannot be moved, closed, or
+        # fullscreened. Client-side Adw header bar fixes all three. It is
+        # assembled with the content below (AdwApplicationWindow forbids
+        # set_titlebar, so the bar lives in a ToolbarView top bar).
+        self._header_bar = None
+        try:
+            hb = Adw.HeaderBar()
+            try:
+                hb.set_show_end_title_buttons(True)
+            except Exception:
+                pass
+            try:
+                fs_btn = Gtk.Button.new_from_icon_name("view-fullscreen-symbolic")
+                fs_btn.set_tooltip_text("Toggle fullscreen (F11)")
+                fs_btn.connect("clicked", lambda *_: self._toggle_fullscreen())
+                hb.pack_end(fs_btn)
+            except Exception:
+                pass
+            self._header_bar = hb
+        except Exception:
+            self._header_bar = None
+        try:
+            sc = Gtk.Shortcut.new(
+                Gtk.ShortcutTrigger.parse_string("F11"),
+                Gtk.CallbackAction.new(lambda *_: self._toggle_fullscreen()),
+            )
+            self.add_shortcut(sc)
+        except Exception:
+            pass
+
+        # Isolated website data (localStorage vault persists, never shared).
+        # This WebKitGTK 6.0 GI exposes only base constructors, so bind the
+        # data manager through GObject construct properties with fallbacks.
+        ctx = None
+        if profile_dir:
+            os.makedirs(profile_dir, mode=0o700, exist_ok=True)
+            try:
+                cache_dir = os.path.join(profile_dir, "cache")
+                os.makedirs(cache_dir, mode=0o700, exist_ok=True)
+                dm0 = WebKit.WebsiteDataManager(
+                    base_data_directory=profile_dir,
+                    base_cache_directory=cache_dir,
+                )
+                try:
+                    ctx = WebKit.WebContext.new_with_website_data_manager(dm0)
+                except Exception:
+                    ctx = None
+            except Exception:
+                ctx = None
+        if ctx is None:
+            try:
+                ctx = WebKit.WebContext.new()
+            except Exception:
+                ctx = WebKit.WebContext.get_default()
+        try:
+            dm = ctx.get_website_data_manager()
+            dm.set_favicon_enabled(False)
+        except Exception:
+            pass
+
+        try:
+            self.web = WebKit.WebView(web_context=ctx)
+        except Exception:
+            self.web = WebKit.WebView.new()
+        settings = self.web.get_settings()
+        try:
+            settings.set_enable_webaudio(False)
+            settings.set_enable_media_stream(True)
+            settings.set_enable_webrtc(False)
+            settings.set_enable_javascript(True)
+            settings.set_enable_webassembly(True)
+            settings.set_enable_local_storage(True)
+            settings.set_javascript_can_open_windows_automatically(False)
+        except Exception:
+            pass
+
+        # Deny-by-default camera: allow video-only for loopback GUI origin.
+        try:
+            self.web.connect("permission-request", self.on_permission)
+        except Exception:
+            pass
+        # Fail-closed TLS: any cert error shows fingerprint compare, never bypass silently.
+        try:
+            self.web.connect("load-failed-with-tls-errors", self.on_tls_error)
+        except Exception:
+            pass
+        # Never navigate off loopback https (no remote URLs, ever).
+        try:
+            self.web.connect("decide-policy", self.on_decide)
+        except Exception:
+            pass
+        try:
+            self.web.connect("load-failed", self.on_load_failed)
+        except Exception:
+            pass
+        try:
+            self.web.connect("download-started", self.on_download)
+        except Exception:
+            pass
+        # Crashed page engine: an embedded view with a dead engine renders
+        # white with no error (seen with the experimental v2 WASM engine on
+        # some system WebKit builds; XM1 never touches it). Offer reload
+        # instead of a dead white page. Reload lands on the lock screen;
+        # memory dies with the old process, so nothing leaks by reloading.
+        try:
+            self.web.connect("web-process-terminated", self.on_web_terminated)
+        except Exception:
+            pass
+
+        if self._header_bar is not None:
+            try:
+                _tv = Adw.ToolbarView()
+                _tv.add_top_bar(self._header_bar)
+                _tv.set_content(self.web)
+                self.set_content(_tv)
+            except Exception:
+                self.set_content(self.web)
+        else:
+            self.set_content(self.web)
+        self._page_url = url
+        self.web.load_uri(url)
+
+    def _toggle_fullscreen(self, *_args):
+        try:
+            if self.is_fullscreen():
+                self.unfullscreen()
+            else:
+                self.fullscreen()
+        except Exception:
+            pass
+        return True
+
+    def on_permission(self, web, request):
+        # Deny-by-default. Camera: video-only + loopback https origin only.
+        try:
+            if request.__class__.__name__ == "UserMediaPermissionRequest":
+                try:
+                    is_video = request.is_for_video_device()
+                    is_audio = request.is_for_audio_device()
+                except Exception:
+                    try:
+                        request.deny()
+                    except Exception:
+                        pass
+                    return True
+                try:
+                    origin = request.get_security_origin().to_string()
+                    u = urllib.parse.urlparse(origin)
+                    ok_origin = u.scheme == "https" and (u.hostname or "").lower() in ("127.0.0.1", "localhost", "::1")
+                except Exception:
+                    ok_origin = False
+                if is_video is True and is_audio is False and ok_origin:
+                    request.allow()
+                else:
+                    request.deny()
+                return True
+        except Exception:
+            pass
+        try:
+            request.deny()
+        except Exception:
+            pass
+        return True
+
+    def on_tls_error(self, web, failing_uri, certificate, errors):
+        try:
+            fp = ""
+            try:
+                fp = certificate.get_fingerprint_sha256() or ""
+            except Exception:
+                fp = ""
+            if not fp:
+                try:
+                    import base64 as _b64
+                    import hashlib as _hl
+                    pem = certificate.get_property("certificate-pem")
+                    b64 = "".join(
+                        line.strip() for line in pem.splitlines() if "-----" not in line
+                    )
+                    der = _b64.b64decode(b64)
+                    fp = ":".join("%02X" % b for b in _hl.sha256(der).digest())
+                except Exception:
+                    fp = ""
+            detail = ""
+            try:
+                detail = str(errors) if errors is not None else ""
+            except Exception:
+                pass
+            try:
+                print("TLS error on %s: %s fp=%s" % (failing_uri, detail, fp or "unknown"), file=sys.stderr)
+            except Exception:
+                pass
+            try:
+                dlg = Adw.MessageDialog.new(
+                    self,
+                    "Certificate problem",
+                    "%s\n\nLeaf SHA256: %s\n%s\n\nCompare with the FIRST fingerprint "
+                    "from: x-messenger gui --cert-info (the Cert line, compared "
+                    "in person — not the Local CA line). If it does not match "
+                    "exactly, close and investigate." % (failing_uri, fp or "unknown", detail),
+                )
+                dlg.add_response("close", "Close")
+                dlg.present()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return True  # stop load, fail closed
+
+    def on_decide(self, web, decision, decision_type):
+        try:
+            from gi.repository import WebKit as _WK
+            if decision_type == _WK.PolicyDecisionType.NAVIGATION_ACTION:
+                uri = ""
+                try:
+                    # WebKitGTK 6.0 GI: no get_request() on the decision;
+                    # go through get_navigation_action().get_request().
+                    try:
+                        req = decision.get_request()
+                    except Exception:
+                        req = None
+                    if req is None:
+                        try:
+                            nav = decision.get_navigation_action()
+                            req = nav.get_request() if nav else None
+                        except Exception:
+                            req = None
+                    uri = req.get_uri() if req else ""
+                except Exception:
+                    uri = ""
+                if not uri:
+                    try:
+                        print("Blocked navigation with unknown URL (fail closed).", file=sys.stderr)
+                    except Exception:
+                        pass
+                    try:
+                        decision.ignore()
+                    except Exception:
+                        pass
+                    return True
+                if not is_loopback_https(uri or ""):
+                    try:
+                        print("Blocked off-device navigation (fail closed): %s" % uri, file=sys.stderr)
+                    except Exception:
+                        pass
+                    try:
+                        decision.ignore()
+                    except Exception:
+                        pass
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def on_load_failed(self, web, load_event, failing_uri, error):
+        try:
+            print("Load failed %s: %s" % (failing_uri, error), file=sys.stderr)
+        except Exception:
+            pass
+        return False
+
+    def on_web_terminated(self, web, reason):
+        try:
+            from gi.repository import WebKit as _WK
+            crashed = (reason == _WK.WebProcessTerminationReason.CRASHED)
+        except Exception:
+            crashed = True
+        try:
+            print("Web engine process terminated (crashed=%s); offering reload." % (crashed,), file=sys.stderr)
+        except Exception:
+            pass
+        if not crashed:
+            return
+        try:
+            dlg = Adw.MessageDialog.new(
+                self,
+                "Page engine stopped",
+                "The page engine stopped unexpectedly (seen with the experimental "
+                "v2 engine on some system browsers; ordinary XM1 transfers never "
+                "touch it). Nothing was sent anywhere. Reload to return to the "
+                "lock screen.",
+            )
+            dlg.add_response("reload", "Reload")
+            dlg.add_response("close", "Close")
+            try:
+                dlg.set_default_response("reload")
+            except Exception:
+                pass
+            try:
+                dlg.set_close_response("close")
+            except Exception:
+                pass
+            try:
+                dlg.connect("response", self._crash_response)
+            except Exception:
+                pass
+            dlg.present()
+        except Exception:
+            pass
+
+    def _crash_response(self, dlg, resp):
+        try:
+            if resp == "reload":
+                # Reload with a crash flag so the page can stand v2 down with
+                # an honest notice instead of crashing again on retry.
+                try:
+                    base = self._page_url or ""
+                except Exception:
+                    base = ""
+                if base:
+                    sep = "&" if "?" in base else "?"
+                    self.web.load_uri(base + sep + "v2crashed=1")
+                else:
+                    self.web.reload()
+        except Exception:
+            pass
+
+    def on_download(self, web, download):
+        try:
+            # Save .xmsg / backup files via chooser, default ~/Downloads.
+            chooser = Gtk.FileChooserNative.new(
+                "Save file", self, Gtk.FileChooserAction.SAVE, "_Save", "_Cancel"
+            )
+            try:
+                chooser.set_do_overwrite_confirmation(True)
+            except Exception:
+                pass
+            try:
+                dl = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+                if dl:
+                    chooser.set_current_folder(Gio.File.new_for_path(dl))
+            except Exception:
+                pass
+            try:
+                filt = Gtk.FileFilter.new()
+                filt.set_name("X Messenger (.xmsg, .json)")
+                filt.add_pattern("*.xmsg")
+                filt.add_pattern("*.json")
+                chooser.add_filter(filt)
+            except Exception:
+                pass
+            try:
+                suggested = download.get_suggested_filename() or "x-messenger-download"
+            except Exception:
+                suggested = "x-messenger-download"
+            chooser.set_current_name(suggested)
+            chooser.connect("response", lambda c, r: self._dl_response(c, r, download))
+            chooser.show()
+        except Exception:
+            pass
+        return True
+
+    def _dl_response(self, chooser, response, download):
+        try:
+            if response == Gtk.ResponseType.ACCEPT:
+                try:
+                    f = chooser.get_file()
+                    download.set_destination(f.get_uri())
+                except Exception:
+                    pass
+            else:
+                try:
+                    download.cancel()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+def main():
+    url, profile = parse_args(sys.argv)
+    if not url or not is_loopback_https(url):
+        print("Refusing: URL must be loopback https (https://127.0.0.1:PORT).", file=sys.stderr)
+        return 2
+    if not profile:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        profile = os.path.join(base, "x-messenger", "webkit-profile")
+    app = Adw.Application(application_id="com.jackh0006.xmessenger", flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+
+    def on_activate(a):
+        w = Window(a, url, profile)
+        w.present()
+
+    app.connect("activate", on_activate)
+    return app.run([])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

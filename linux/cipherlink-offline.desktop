@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=X Messenger
+Comment=Offline encrypted QR messenger
+# Template only: install-linux-launcher.sh generates the real entry with
+# absolute paths for the current checkout. Do not hand-edit this file.
+Exec=cipherlink gui
+TryExec=cipherlink
+Icon=cipherlink-offline
+Terminal=false
+Categories=Network;InstantMessaging;
+Keywords=qr;encrypt;offline;messenger;
+StartupNotify=true
+StartupWMClass=X-Messenger

@@ -1,0 +1,1356 @@
+// SPDX-License-Identifier: MIT
+let pendingText = '', currentPayload = '', currentVia = 'qr', scanning = false, scanTimer;
+const $ = (s) => document.querySelector(s);
+const { encryptText, decryptText, vaultSeal, vaultOpen, qrSplit, qrParseChunk, qrAssemble, QR_CHUNK_CHARS } = XMessengerCrypto;
+const donations = [
+  ['Bitcoin', 'bc1q8t0fn2yrsy4lh3m0pz34uj27t8vxjeavkjym83'], ['DOGE', 'D6ZdMQ7mHGGmuH9prpZ2zjpnG5Q3WVRDtC'],
+  ['Ethereum / USDT ERC20 / BNB', '0xdad428900a4359be8f76b3062df34211582e09eb'], ['TRX / USDT TRC20', 'TMpb6RNTuGNM1eTakm9kjds1mRTPYYJesf'],
+  ['SOL / USDT SPL / USDC SPL', 'BDCCrRez1yD1RpkAtiqKKDk3BfxPD8P7nkL26jCYrzgL'], ['XRP', 'rNUAhaATFLvosdu9m9M95bupRBtZ8eqpj9'],
+  ['TON', 'UQCu6-3yGyQ5dzvcCxr2gobuvx5ddbS9EC690qtey92P5_wX'], ['LTC', 'ltc1q2gs89cfy3mumr7gu9w0zl9rllf80q67m5rmma8']
+];
+function openModal(id) {
+  const d = typeof id === 'string' ? $(id) : id;
+  if (!d) return;
+  closeDrawer();
+  if (typeof d.showModal === 'function') { try { if (!d.open) d.showModal(); return; } catch {} }
+  try { d.setAttribute('open', ''); } catch {}
+}
+// Telegram-style drawer (mobile): full sidebar equipment
+function openDrawer() { try { document.body.classList.add('drawer-open'); $('#scrim').hidden = false; $('#menuBtn').setAttribute('aria-expanded', 'true'); } catch {} }
+function closeDrawer() { try { document.body.classList.remove('drawer-open'); $('#scrim').hidden = true; $('#menuBtn').setAttribute('aria-expanded', 'false'); } catch {} }
+try {
+  $('#menuBtn').onclick = () => (document.body.classList.contains('drawer-open') ? closeDrawer() : openDrawer());
+  $('#scrim').onclick = closeDrawer;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+  document.querySelectorAll('.sidebar [data-view], .sidebar #newTransfer').forEach(b => b.addEventListener('click', closeDrawer));
+} catch {}
+function wipeSecrets() {
+  for (const sel of ['#phraseInput', '#receivePhrase']) { const el = $(sel); if (el) el.value = ''; }
+  pendingText = '';
+  try { if (strength) strength.textContent = 'Strength: enter a phrase'; } catch {}
+}
+function closeAll() { wipeSecrets(); document.querySelectorAll('dialog[open]').forEach(d => d.close()); stopScanner(); }
+// A password field may be exposed by an app switcher, screen share, or a
+// shoulder surfer.  Do not retain a phrase when this document is backgrounded.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    wipeSecrets();
+    try { stopScanner(); } catch {}
+    // Backgrounded = locked: persist, then wipe memory. Returning shows the
+    // lock screen, never plaintext.
+    try { if (vaultMode === 'open') vaultLock(); } catch {}
+  }
+});
+let clearClipboardTimer = null;
+function clearClipboardLater(label) {
+  try { if (clearClipboardTimer) clearTimeout(clearClipboardTimer); } catch {}
+  clearClipboardTimer = setTimeout(async () => {
+    try { await navigator.clipboard.writeText(''); } catch {}
+    clearClipboardTimer = null;
+  }, 30000);
+}
+function clearClipboardNow() {
+  try { if (clearClipboardTimer) clearTimeout(clearClipboardTimer); } catch {}
+  clearClipboardTimer = null;
+  try { const p = navigator.clipboard.writeText(''); if (p && p.catch) p.catch(() => {}); } catch {}
+}
+function timeNow() { return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date()); }
+// Session message store (1.0.8). Plaintext lives ONLY here, in this page.
+// Lock, close, background-clear, or Clear chat wipes it. Nothing persists.
+const chatStore = { list: [], seq: 0 };
+let chatFilter = '', selectMode = false, starFilter = false, replyTarget = null;
+// Current main-pane view: 'saved' | 'receive' | 'users' | 'pair' | 'settings'.
+// Receive shows incoming only; users/pair render dedicated pages.
+// threadFor: null = general notes (Saved); a profile id = that user's thread.
+let currentView = 'saved';
+let threadFor = null;
+const selectedIds = new Set();
+function chatEntry(dir, text, opts = {}) {
+  const entry = { id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir, text, sealed: opts.sealed || '', via: opts.via || '', to: opts.to || '', ts: Date.now(), viewOnce: !!opts.viewOnce, expiresAt: opts.viewOnce ? Date.now() + 30000 : 0, replyTo: opts.replyTo || '', starred: false, fwd: !!opts.fwd };
+  chatStore.list.push(entry);
+  if (entry.viewOnce) setTimeout(() => deleteMessage(entry.id, true), 30000);
+  scheduleVaultSave();
+  return entry;
+}
+function deleteMessage(id, silent) {
+  const i = chatStore.list.findIndex(m => m.id === id);
+  if (i === -1) return false;
+  chatStore.list[i].text = ''; chatStore.list[i].sealed = '';
+  chatStore.list.splice(i, 1); selectedIds.delete(id);
+  renderChat();
+  scheduleVaultSave();
+  if (!silent) { try { $('#chatStatus').textContent = 'Message deleted from this device.'; } catch {} }
+  return true;
+}
+function clearChat(confirmed) {
+  if (!chatStore.list.length) return;
+  if (!confirmed && !confirm('Delete all messages in this session from this device? This cannot be undone.')) return;
+  for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
+  chatStore.list.length = 0; selectedIds.clear(); chatFilter = '';
+  try { $('#chatSearch').value = ''; } catch {}
+  renderChat();
+  scheduleVaultSave();
+}
+// ---- Encrypted on-device history vault (vault passphrase model).
+// Same reviewed primitives as XM1 (AES-256-GCM + PBKDF2/600k, see core.js).
+// The passphrase lives in memory only while unlocked and is wiped on lock;
+// the stored blob is opaque ciphertext. No plaintext history ever persists.
+const VAULT_KEY = 'x-messenger-vault';
+const VAULT_CAP = 500;
+let vaultMode = 'none'; // 'none' | 'locked' | 'open'
+let vaultPhrase = '';
+let vaultOffered = false;
+let vaultSaveTimer = null;
+function vaultSnapshot() {
+  // View-once must never hit disk, even encrypted: filter before seal.
+  return chatStore.list.filter(m => !m.viewOnce).slice(-VAULT_CAP).map(m => ({ id: m.id, dir: m.dir, text: m.text || '', sealed: m.sealed || '', via: m.via || '', to: m.to || '', ts: m.ts || Date.now(), viewOnce: false, expiresAt: 0, replyTo: m.replyTo || '', starred: !!m.starred, fwd: !!m.fwd }));
+}
+function scheduleVaultSave() {
+  if (vaultMode !== 'open') return;
+  try { clearTimeout(vaultSaveTimer); } catch {}
+  vaultSaveTimer = setTimeout(() => { flushVaultSave(); }, 1200);
+}
+async function flushVaultSave() {
+  if (vaultMode !== 'open' || !vaultPhrase) return false;
+  try { clearTimeout(vaultSaveTimer); } catch {}
+  try {
+    localStorage.setItem(VAULT_KEY, await vaultSeal(vaultSnapshot(), vaultPhrase));
+    return true;
+  } catch { try { const el = document.getElementById('chatStatus'); if (el) el.textContent = 'History too large to lock (cap reached — delete old messages).'; } catch {} return false; }
+}
+function vaultRestore(items) {
+  for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
+  chatStore.list.length = 0; selectedIds.clear();
+  let seq = 0;
+  for (const e of (Array.isArray(items) ? items : []).slice(-VAULT_CAP)) {
+    if (!e || typeof e !== 'object') continue;
+    if (e.viewOnce) continue; // view-once never survives a lock
+    const id = typeof e.id === 'string' && e.id ? e.id.slice(0, 40) : `m${++seq}-${Date.now().toString(36)}`;
+    const mm = id.match(/^m(\d+)-/);
+    if (mm) seq = Math.max(seq, Number(mm[1]));
+    chatStore.list.push({ id, dir: e.dir === 'incoming' ? 'incoming' : 'outgoing', text: typeof e.text === 'string' ? e.text.slice(0, 8000) : '', sealed: typeof e.sealed === 'string' ? e.sealed.slice(0, 32772) : '', via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', to: typeof e.to === 'string' ? e.to.slice(0, 60) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, replyTo: typeof e.replyTo === 'string' ? e.replyTo.slice(0, 40) : '', starred: !!e.starred, fwd: !!e.fwd });
+  }
+  chatStore.seq = Math.max(chatStore.seq, seq);
+}
+async function vaultUnlock(phrase) {
+  const blob = localStorage.getItem(VAULT_KEY);
+  if (!blob) throw new Error('No locked history on this device.');
+  const items = await vaultOpen(blob, phrase);
+  if (!Array.isArray(items)) throw new Error('Could not unlock: history damaged.');
+  vaultPhrase = phrase; vaultMode = 'open';
+  vaultRestore(items);
+  renderChat();
+}
+async function vaultSetup(p1, p2) {
+  if (!p1 || p1.length < 8) throw new Error('Use at least 8 characters — 20+ or four random words recommended.');
+  if (p1 !== p2) throw new Error('Passphrases do not match.');
+  if (localStorage.getItem(VAULT_KEY)) throw new Error('A vault already exists — unlock or wipe it first.');
+  vaultPhrase = p1; vaultMode = 'open';
+  const ok = await flushVaultSave();
+  if (!ok) { vaultPhrase = ''; vaultMode = 'none'; throw new Error('Could not lock history on this device.'); }
+  renderChat();
+}
+async function vaultChange(oldP, p1, p2) {
+  if (vaultMode !== 'open') throw new Error('Unlock the vault first.');
+  const blob = localStorage.getItem(VAULT_KEY);
+  if (!blob) throw new Error('No locked history on this device.');
+  await vaultOpen(blob, oldP); // verifies the old passphrase without touching memory
+  if (!p1 || p1.length < 8) throw new Error('Use at least 8 characters for the new passphrase.');
+  if (p1 !== p2) throw new Error('New passphrases do not match.');
+  const prev = vaultPhrase;
+  vaultPhrase = p1;
+  const ok = await flushVaultSave();
+  if (!ok) { vaultPhrase = prev; throw new Error('Could not re-lock history.'); }
+}
+async function vaultLock() {
+  await flushVaultSave();
+  vaultPhrase = '';
+  vaultMode = localStorage.getItem(VAULT_KEY) ? 'locked' : 'none';
+  try { clearTimeout(vaultSaveTimer); } catch {}
+  try { clearClipboardNow(); } catch {}
+  wipeSession();
+  renderChat();
+}
+// Vault dialog: 'setup' (choose passphrase), 'unlock', or 'change'. Forgot =
+// verified wipe of everything, never a bypass.
+function openVaultDialog(mode) {
+  let d = document.getElementById('vaultDialog');
+  if (!d) {
+    d = document.createElement('dialog');
+    d.className = 'modal'; d.id = 'vaultDialog';
+    document.body.append(d);
+  }
+  const setup = mode === 'setup';
+  const change = mode === 'change';
+  d.innerHTML = '<button class="modal-close" data-close>×</button><div class="modal-content">'
+    + `<div class="modal-kicker">${setup ? 'LOCK HISTORY ON THIS DEVICE' : change ? 'CHANGE VAULT PASSPHRASE' : 'HISTORY IS LOCKED'}</div>`
+    + `<h2>${setup ? 'Protect history with a passphrase' : change ? 'Change passphrase' : 'Unlock history'}</h2>`
+    + `<p>${setup
+      ? 'Messages will be stored on this device sealed with your passphrase (AES-256-GCM + PBKDF2/600k). Forget it and history is unrecoverable — that is the point.'
+      : change
+        ? 'Verify the current passphrase, then choose a new one. History is re-sealed on this device only.'
+        : 'Enter your vault passphrase. Wrong entries fail closed and are never logged.'}</p>`
+    + `${change ? '<label>Current passphrase<input id="vaultPassOld" type="password" autocomplete="current-password" placeholder="Current passphrase"></label>' : `<label>Vault passphrase<input id="vaultPass" type="password" autocomplete="${setup ? 'new-password' : 'current-password'}" placeholder="20+ characters or four random words"></label>`}`
+    + (setup || change ? '<label>Repeat new passphrase<input id="vaultPass2" type="password" autocomplete="new-password" placeholder="Repeat it exactly"></label>' : '')
+    + `<button class="primary-large" id="vaultGo">${setup ? 'Lock history <span>→</span>' : change ? 'Change it <span>→</span>' : 'Unlock <span>→</span>'}</button>`
+    + (setup || change ? '' : '<button class="ghost-button" id="vaultForgot">Forgot — wipe everything</button>')
+    + '<p id="vaultStatus" class="receive-status"></p></div>';
+  d.querySelector('[data-close]').onclick = () => d.close();
+  const say = t => { const s = d.querySelector('#vaultStatus'); if (s) s.textContent = t; };
+  d.querySelector('#vaultGo').onclick = async () => {
+    try {
+      if (change) {
+        await vaultChange(d.querySelector('#vaultPassOld').value, d.querySelector('#vaultPass').value, d.querySelector('#vaultPass2').value);
+        say('Passphrase changed; history re-sealed.');
+      } else {
+        const p1 = d.querySelector('#vaultPass').value;
+        if (setup) {
+          await vaultSetup(p1, d.querySelector('#vaultPass2').value);
+          say('History locked on this device.');
+        } else {
+          await vaultUnlock(p1);
+          say('Unlocked.');
+        }
+      }
+      d.querySelector('#vaultPass').value = '';
+      try { d.querySelector('#vaultPass2').value = ''; } catch {}
+      try { d.querySelector('#vaultPassOld').value = ''; } catch {}
+      setTimeout(() => { try { d.close(); } catch {} }, 450);
+    } catch (e) { say(e.message || 'Could not unlock.'); }
+  };
+  if (!setup && !change) {
+    d.querySelector('#vaultForgot').onclick = async () => {
+      if (!confirm('Wipe ALL X Messenger data from this device (vault history, labels, settings)? This cannot be undone.')) return;
+      vaultMode = 'none'; vaultPhrase = '';
+      try { clearTimeout(vaultSaveTimer); } catch {}
+      try { v2unpair(); } catch {}
+      pendingText = ''; try { await navigator.clipboard.writeText(''); } catch {}
+      wipeSession(); currentPayload = '';
+      [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1', V2BROKEN_KEY].forEach(key => { try { if (key) localStorage.removeItem(key); } catch {} });
+      activeProfileId = null; threadFor = null;
+      try { renderProfiles(); applySettings({}); } catch {}
+      try { d.close(); } catch {}
+      setView('saved');
+    };
+  }
+  openModal('#vaultDialog');
+}
+// Non-modal banner offering vault setup once per session (never a popup).
+function maybeVaultBanner(box) {
+  try {
+    if (vaultMode !== 'none' || vaultOffered || !chatStore.list.length) return;
+    if (localStorage.getItem(VAULT_KEY)) return;
+    const bar = document.createElement('div'); bar.className = 'view-head vault-offer';
+    const t = document.createElement('strong'); t.textContent = 'Keep history on this device?';
+    const s = document.createElement('span'); s.textContent = 'Lock it with a passphrase (encrypted). Otherwise it lives only until you close or lock.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const go = document.createElement('button'); go.className = 'primary-large view-cta'; go.textContent = 'Lock history →';
+    go.onclick = () => { vaultOffered = true; openVaultDialog('setup'); };
+    const no = document.createElement('button'); no.className = 'ghost-button'; no.textContent = 'Not now';
+    no.onclick = () => { vaultOffered = true; try { bar.remove(); } catch {} };
+    row.append(go, no); bar.append(t, s, row); box.append(bar);
+  } catch {}
+}
+function wipeSession() {
+  for (const m of chatStore.list) { m.text = ''; m.sealed = ''; }
+  chatStore.list.length = 0; selectedIds.clear(); chatFilter = ''; selectMode = false;
+  try { $('#chatSearch').value = ''; updateSelectBar(); } catch {}
+  renderChat();
+  scheduleVaultSave();
+}
+function renderChat() {
+  const box = $('#messages'); if (!box) return;
+  box.replaceChildren();
+  if (currentView === 'users') { renderUsersPane(box); updateSelectBar(); return; }
+  if (currentView === 'pair') { renderPairPane(box); updateSelectBar(); return; }
+  if (vaultMode === 'locked') {
+    const head = document.createElement('div'); head.className = 'view-head';
+    const t = document.createElement('strong'); t.textContent = 'History is locked';
+    const s = document.createElement('span'); s.textContent = 'Your messages are sealed on this device. Unlock to read them — nothing left this device.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const un = document.createElement('button'); un.className = 'primary-large view-cta'; un.textContent = 'Unlock history →';
+    un.onclick = () => openVaultDialog('unlock');
+    row.append(un); head.append(t, s, row); box.append(head);
+    updateSelectBar(); return;
+  }
+  if (currentView === 'saved' && !threadFor) maybeVaultBanner(box);
+  const incomingOnly = currentView === 'receive';
+  if (incomingOnly) {
+    const head = document.createElement('div'); head.className = 'view-head';
+    const n = chatStore.list.filter(m => m.dir === 'incoming').length;
+    const t = document.createElement('strong'); t.textContent = `Recent received (${n})`;
+    const s = document.createElement('span'); s.textContent = 'Decrypted here, session only. Deleting history removes all of them from this device.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const scan = document.createElement('button'); scan.className = 'primary-large view-cta'; scan.textContent = '⌗ Scan / paste new';
+    scan.onclick = () => openModal('#receiveDialog');
+    const del = document.createElement('button'); del.className = 'ghost-button'; del.textContent = 'Delete history';
+    del.onclick = () => clearChat();
+    row.append(scan, del); head.append(t, s, row); box.append(head);
+  }
+  if (currentView === 'saved' && threadFor) {
+    const who = profiles().find(p => p.id === threadFor);
+    const head = document.createElement('div'); head.className = 'view-head';
+    const t = document.createElement('strong'); t.textContent = who ? `Thread with ${who.name}` : 'Thread';
+    const s = document.createElement('span'); s.textContent = 'Only messages sealed for this contact. Nothing leaves this device.';
+    const row = document.createElement('div'); row.className = 'view-actions';
+    const back = document.createElement('button'); back.className = 'ghost-button'; back.textContent = '← All notes';
+    back.onclick = () => { threadFor = null; activeProfileId = null; setView('saved'); };
+    row.append(back); head.append(t, s, row); box.append(head);
+  }
+  const q = chatFilter.trim().toLowerCase();
+  let items = q ? chatStore.list.filter(m => (m.text || '').toLowerCase().includes(q)) : [...chatStore.list];
+  if (incomingOnly) {
+    items = items.filter(m => m.dir === 'incoming');
+  } else if (currentView === 'saved') {
+    // Saved Messages holds general notes only; addressed messages live in
+    // their user's thread (Users → Send). Incoming unaddressed seals also
+    // surface under Receive.
+    items = threadFor ? items.filter(m => m.to === threadFor) : items.filter(m => !m.to);
+  }
+  if (starFilter) items = items.filter(m => m.starred);
+  if (!items.length && !q && !starFilter) {
+    const w = document.createElement('div'); w.className = 'welcome-card';
+    if (incomingOnly) {
+      w.innerHTML = '<div class="welcome-icon">⌗</div><h2>No received messages yet.</h2><p>Scan a QR or paste ciphertext to receive. Nothing here is uploaded anywhere.</p>';
+    } else if (currentView === 'saved' && threadFor) {
+      w.innerHTML = '<div class="welcome-icon">▤</div><h2>No messages with this contact yet.</h2><p>Write below — it seals addressed to them only.</p>';
+    } else if (currentView === 'saved') {
+      w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>General notes live here. Messages to a contact live in their thread (Users → Send). Session only: history vanishes on lock or close.</p>';
+    } else {
+      w.innerHTML = '<div class="welcome-icon">X</div><h2>No signal? No account? Send it anyway.</h2><p>Seal on this device → show QR → they decrypt offline. Session only: history vanishes on lock or close.</p>';
+    }
+    box.append(w); updateSelectBar(); return;
+  }
+  if (q || starFilter) {
+    const n = document.createElement('div'); n.className = 'msg-count'; n.id = 'chatStatus';
+    n.textContent = starFilter && !q ? `${items.length} starred` : `${items.length} of ${chatStore.list.length} match`; box.append(n);
+  }
+  for (const m of items) {
+    const article = document.createElement('article'); article.className = `message ${m.dir === 'incoming' ? 'incoming' : 'outgoing'}`; article.dataset.mid = m.id;
+    const bubble = document.createElement('div'); bubble.className = 'message-bubble';
+    if (selectMode) {
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'msg-select'; cb.checked = selectedIds.has(m.id);
+      cb.setAttribute('aria-label', 'Select message');
+      cb.onchange = () => { cb.checked ? selectedIds.add(m.id) : selectedIds.delete(m.id); updateSelectBar(); };
+      bubble.append(cb);
+    }
+    if (m.replyTo) {
+      const src = chatStore.list.find(x => x.id === m.replyTo);
+      const quote = document.createElement('div'); quote.className = 'msg-quote';
+      quote.textContent = src && src.text ? `↩ ${src.text.slice(0, 80)}` : '↩ original message deleted';
+      bubble.append(quote);
+    }
+    if (m.sealedOnly) {
+      const lock = document.createElement('button'); lock.className = 'sealed-open'; lock.textContent = `🔒 sealed envelope${m.via ? ` (${m.via})` : ''} — tap to open`;
+      lock.onclick = () => openEnvelope(m.id);
+      bubble.append(lock);
+    } else {
+      const span = document.createElement('span'); span.className = 'msg-text';
+      span.textContent = m.text;
+      bubble.append(span);
+    }
+    const stamp = document.createElement('time');
+    stamp.textContent = `${new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' }).format(new Date(m.ts))}${m.dir === 'outgoing' ? (m.fwd ? '  ✓✓ forwarded' : '  ✓✓') : ''}${m.viewOnce ? '  👁 once' : ''}${m.starred ? '  ★' : ''}${m.via ? `  ${m.via}` : ''}`;
+    bubble.append(stamp); article.append(bubble);
+    bindMsgPress(article, bubble, m.id);
+    const del = document.createElement('button'); del.className = 'msg-del'; del.textContent = '×'; del.setAttribute('aria-label', 'Delete this message');
+    del.onclick = () => deleteMessage(m.id);
+    article.append(del); box.append(article);
+  }
+  box.scrollTop = box.scrollHeight; updateSelectBar();
+}
+function updateSelectBar() {
+  try {
+    $('#selCount').textContent = selectMode ? `${selectedIds.size} selected` : '';
+    $('#delSelected').style.display = selectMode ? '' : 'none';
+    $('#expSelected').style.display = selectMode ? '' : 'none';
+    $('#cancelSelect').style.display = selectMode ? '' : 'none';
+  } catch {}
+}
+// Telegram-style message interactions (1.0.8): tap = full menu, hold =
+// quick bar. Everything runs on the session store; nothing leaves.
+let pendingForward = false, pendingRekey = null;
+function msgById(id) { return chatStore.list.find(m => m.id === id); }
+function copyMsgText(id) {
+  const m = msgById(id); if (!m || m.sealedOnly) return 'Nothing to copy.';
+  let text = m.text;
+  try {
+    const sel = window.getSelection();
+    const bubble = document.querySelector(`article[data-mid="${id}"] .msg-text`);
+    if (sel && sel.toString() && bubble && sel.anchorNode && bubble.contains(sel.anchorNode)) text = sel.toString();
+  } catch {}
+  navigator.clipboard.writeText(text).catch(() => {});
+  clearClipboardLater();
+  return 'Copied (clears in 30s).';
+}
+function replyToMsg(id) {
+  const m = msgById(id); if (!m) return;
+  replyTarget = id;
+  showReplyBar(m);
+  $('#messageInput').focus();
+}
+function showReplyBar(m) {
+  hideReplyBar();
+  const bar = document.createElement('div'); bar.id = 'replyBar'; bar.className = 'reply-bar';
+  const q = document.createElement('span'); q.className = 'msg-quote';
+  q.textContent = `↩ ${(m.text || 'sealed envelope').slice(0, 80)}`;
+  const x = document.createElement('button'); x.className = 'icon-button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Cancel reply');
+  x.onclick = hideReplyBar;
+  bar.append(q, x);
+  document.querySelector('.composer-wrap').prepend(bar);
+}
+function hideReplyBar() { replyTarget = null; try { $('#replyBar')?.remove(); } catch {} }
+function forwardMsg(id) {
+  const m = msgById(id); if (!m || m.sealedOnly) return;
+  pendingForward = true;
+  pendingText = m.text;
+  openModal('#phraseDialog');
+  $('#messageInput').value = '';
+}
+async function rekeyMsg(id) {
+  const m = msgById(id); if (!m || !m.sealed) return 'Nothing to re-key.';
+  pendingRekey = id;
+  pendingText = m.text;
+  openModal('#phraseDialog');
+  return 'Choose a NEW phrase — the envelope becomes brand-new randomness.';
+}
+function toggleStar(id) {
+  const m = msgById(id); if (!m) return;
+  m.starred = !m.starred;
+  renderChat();
+}
+function showDetails(id) {
+  const m = msgById(id); if (!m) return;
+  closeMsgMenu();
+  const d = document.createElement('dialog'); d.className = 'modal'; d.id = 'msgDetailsDialog';
+  const when = new Date(m.ts).toLocaleString();
+  d.innerHTML = `<button class="modal-close" data-close>×</button><div class="modal-content"><div class="modal-kicker">MESSAGE DETAILS</div><h2>${m.dir === 'incoming' ? 'Received' : 'Sent'} · ${when}</h2><div class="guide-grid"><div><b>◈</b><p><strong>Transport</strong><small>${m.via || 'qr'} · sealed ${m.sealed ? m.sealed.length + ' B' : '—'}</small></p></div><div><b>★</b><p><strong>Starred</strong><small>${m.starred ? 'yes (session only)' : 'no'}</small></p></div><div><b>👁</b><p><strong>View-once</strong><small>${m.viewOnce ? 'yes — auto-deletes' : 'no'}</small></p></div><div><b>◇</b><p><strong>Message ID</strong><small>${m.id}</small></p></div></div><p class="subtle">Session-only: plaintext vanishes on lock or close. Sealed envelope re-readable only with its phrase.</p></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick = () => { d.close(); d.remove(); };
+  d.showModal();
+}
+function closeMsgMenu() { try { $('#msgMenu')?.remove(); } catch {} try { $('#msgQuick')?.remove(); } catch {} }
+function openMsgMenu(id, x, y) {
+  closeMsgMenu();
+  const m = msgById(id); if (!m) return;
+  const menu = document.createElement('div'); menu.id = 'msgMenu'; menu.className = 'msg-menu'; menu.setAttribute('role', 'menu');
+  const items = [
+    ['↩ Reply', () => replyToMsg(id)],
+    ['⧉ Copy', () => flashMenu(copyMsgText(id))],
+    ['🔑 Re-key (new random envelope)', () => rekeyMsg(id).then(t => flashMenu(t))],
+    ['➦ Forward', () => forwardMsg(id)],
+    [m.starred ? '☆ Unstar' : '★ Add to favorites', () => { toggleStar(id); }],
+    ['🗑 Delete', () => deleteMessage(id)],
+    ['ⓘ Details', () => showDetails(id)],
+  ];
+  if (!m.sealedOnly) items.splice(2, 0, ['✂ Copy selection', () => flashMenu(copyMsgText(id))]);
+  for (const [label, fn] of items) {
+    const b = document.createElement('button'); b.textContent = label; b.setAttribute('role', 'menuitem');
+    b.onclick = () => { closeMsgMenu(); fn(); };
+    menu.append(b);
+  }
+  document.body.append(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
+  setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+}
+function flashMenu(text) {
+  closeMsgMenu();
+  try { $('#chatStatus').textContent = text; } catch {}
+  renderChat();
+}
+function dismissMsgMenu(e) {
+  if (e && e.target && (e.target.closest('#msgMenu') || e.target.closest('#msgQuick'))) {
+    setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+    return;
+  }
+  closeMsgMenu();
+}
+function openMsgQuick(id, x, y) {
+  closeMsgMenu();
+  if (!msgById(id)) return;
+  const bar = document.createElement('div'); bar.id = 'msgQuick'; bar.className = 'msg-quick';
+  const mk = (label, title, fn) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.onclick = () => { closeMsgMenu(); fn(); }; bar.append(b); return b; };
+  mk('⧉', 'Copy (top right)', () => flashMenu(copyMsgText(id)));
+  mk('➦', 'Forward', () => forwardMsg(id));
+  mk('🗑', 'Delete', () => deleteMessage(id));
+  mk('⋮', 'More — incl. Add to favorites', () => openMsgMenu(id, x, y));
+  document.body.append(bar);
+  const r = bar.getBoundingClientRect();
+  bar.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+  bar.style.top = `${Math.max(8, y - r.height - 8)}px`;
+  setTimeout(() => document.addEventListener('pointerdown', dismissMsgMenu, { once: true }), 0);
+}
+function bindMsgPress(article, bubble, id) {
+  bubble.style.cursor = 'pointer';
+  bubble.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, .msg-select')) return;
+    const r = bubble.getBoundingClientRect();
+    openMsgMenu(id, r.left + 16, r.bottom + 4);
+  });
+  let timer = null, sx = 0, sy = 0;
+  const start = e => {
+    const t = e.touches ? e.touches[0] : e;
+    sx = t.clientX; sy = t.clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const r = bubble.getBoundingClientRect();
+      openMsgQuick(id, r.left + r.width / 2, r.top);
+    }, 500);
+  };
+  const cancel = e => {
+    if (e.touches && e.touches[0]) {
+      const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+      if (dx * dx + dy * dy > 100) clearTimeout(timer);
+    } else clearTimeout(timer);
+  };
+  bubble.addEventListener('touchstart', start, { passive: true });
+  bubble.addEventListener('touchmove', cancel, { passive: true });
+  bubble.addEventListener('touchend', () => clearTimeout(timer));
+  bubble.addEventListener('mousedown', e => { if (e.button === 0) start(e); });
+  bubble.addEventListener('mouseup', () => clearTimeout(timer));
+  bubble.addEventListener('contextmenu', e => { e.preventDefault(); clearTimeout(timer); openMsgMenu(id, e.clientX, e.clientY); });
+}
+function addMessage(text, direction = 'outgoing', opts = {}) { chatEntry(direction === 'incoming' ? 'incoming' : 'outgoing', text, opts); renderChat(); }
+function setView(view) { const views = { saved: ['▣', 'Saved Messages', 'Private notes — not uploaded anywhere'], receive: ['⌗', 'Receive a message', 'Recent received + scan new'], users: ['▤', 'Users', 'Local contacts on this device'], pair: ['◈', 'Pair v2 contact', 'Post-quantum handshake, face to face'], settings: ['⚙', 'Settings & privacy', 'Theme, data, and security controls'] }; if (!views[view]) return; document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view)); $('#viewIcon').textContent = views[view][0]; $('#viewTitle').textContent = views[view][1]; $('#viewSubtitle').textContent = views[view][2]; currentView = view; if (view === 'saved') { threadFor = null; activeProfileId = null; try { $('#messageInput').placeholder = 'Write a private message…'; } catch {} } if (view === 'settings') openModal('#settingsDialog'); else if (view === 'pair') { buildPairDialog(); v2status(); } renderChat(); closeDrawer(); }
+async function presentTransfer(payload) {
+  currentPayload = payload;
+  const bytes = new Blob([payload]).size;
+  $('#payloadSize').textContent = `${bytes} B sealed`;
+  try {
+    const st = await qrShowPayload($('#qrCanvas'), payload, { width: 296, ec: 'L' });
+    if (st.parts.length > 1) $('#payloadSize').textContent += ` — ${st.parts.length} QR parts, scan every part`;
+  } catch {
+    try { $('#qrCanvas').getContext('2d').clearRect(0, 0, 296, 296); } catch {}
+    $('#payloadSize').textContent += ' — QR failed, use Copy or .xmsg file';
+  }
+  openModal('#transferDialog');
+}
+
+// Multi-part QR pager: payloads above one reliable QR are shown as numbered
+// parts the recipient scans in any order (XMQ1 framing in core.js).
+// currentPayload, Copy and .xmsg always carry the full payload.
+function qrPagerFor(canvas) {
+  let row = canvas._qrPager;
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'qr-pager';
+    row.style.display = 'none';
+    const prev = document.createElement('button');
+    prev.type = 'button'; prev.textContent = '‹ Prev';
+    const label = document.createElement('span');
+    const next = document.createElement('button');
+    next.type = 'button'; next.textContent = 'Next ›';
+    row.append(prev, label, next);
+    row._prev = prev; row._label = label; row._next = next;
+    canvas.after(row);
+    canvas._qrPager = row;
+  }
+  return row;
+}
+
+async function qrShowPayload(canvas, payload, opts = {}) {
+  const width = opts.width || 296, ec = opts.ec || 'L';
+  const row = qrPagerFor(canvas);
+  const parts = payload.length > QR_CHUNK_CHARS ? qrSplit(payload) : [payload];
+  const state = { parts, i: 0 };
+  const draw = async () => {
+    await QRCode.toCanvas(canvas, state.parts[state.i], { width, margin: 2, errorCorrectionLevel: ec });
+    if (state.parts.length > 1) {
+      row.style.display = '';
+      row._label.textContent = `Part ${state.i + 1}/${state.parts.length} — scan every part`;
+      row._prev.disabled = state.i === 0;
+      row._next.disabled = state.i === state.parts.length - 1;
+    } else {
+      row.style.display = 'none';
+    }
+  };
+  row._prev.onclick = async () => { if (state.i > 0) { state.i--; try { await draw(); } catch {} } };
+  row._next.onclick = async () => { if (state.i < state.parts.length - 1) { state.i++; try { await draw(); } catch {} } };
+  canvas._qrState = state;
+  try {
+    await draw();
+  } catch {
+    try { canvas.getContext('2d').clearRect(0, 0, canvas.width || width, canvas.height || width); } catch {}
+    row.style.display = 'none';
+    throw new Error('QR render failed');
+  }
+  return state;
+}
+$('#sendMessage').onclick = () => { pendingText = $('#messageInput').value.trim(); if (pendingText) openModal('#phraseDialog'); };
+function startChat() { if (profiles().length) { setView('users'); } else try { profileDialog.showModal(); } catch {} }
+try {
+  const hv = document.createElement('label');
+  hv.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:12px';
+  hv.innerHTML = '<input id="highValue" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>High-value text</strong> (like keys or seeds): require 20+ characters, use once, tell in person, shield the screen, delete after.</span>';
+  $('#sealTransfer').before(hv);
+  const vo = document.createElement('label');
+  vo.style.cssText = 'display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px';
+  vo.innerHTML = '<input id="viewOnce" type="checkbox" style="width:auto;margin-top:2px"> <span><strong>View once</strong>: auto-delete from this session 30 seconds after sealing.</span>';
+  $('#sealTransfer').before(vo);
+} catch {}
+$('#sealTransfer').onclick = async () => { const button = $('#sealTransfer'); button.disabled = true; button.textContent = 'Sealing locally…'; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } const text = pendingText; const once = !!($('#viewOnce') && $('#viewOnce').checked); const highValue = !!($('#highValue') && $('#highValue').checked); try { const hvb = $('#highValue'); if (hvb) hvb.checked = false; const vob = $('#viewOnce'); if (vob) vob.checked = false; } catch {} if (v2threadActive()) { if (new Blob([text]).size > 1000) { $('#phraseInput').setCustomValidity('Too long for v2 QR bucket (~1000 bytes max). Shorten or use XM1 file.'); $('#phraseInput').reportValidity(); return; } $('#phraseInput').value = ''; const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); const out = await xm2call('seal', { handle: v2send, text }); addMessage(text, 'outgoing', { sealed: out.envelope, via: 'xm2', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(out.envelope); return; } let phrase = $('#phraseInput').value; if (!phrase) { $('#phraseInput').setCustomValidity('Enter a shared phrase. Any non-empty phrase is allowed.'); $('#phraseInput').reportValidity(); return; } try { if (highValue && phrase.length < 20) { $('#phraseInput').setCustomValidity('High-value mode: use 20+ characters or four random words, one time only.'); $('#phraseInput').reportValidity(); return; } } catch {} const payload = await encryptText(text, phrase); phrase = ''; $('#phraseInput').value = ''; if (pendingRekey) { const target = msgById(pendingRekey); pendingRekey = null; if (target && target.text === text) { target.sealed = payload; target.viewOnce = once; renderChat(); scheduleVaultSave(); $('#messageInput').value = ''; updateMsgCount(); hideReplyBar(); closeAll(); await presentTransfer(payload); return; } } const wasFwd = pendingForward; pendingForward = false; const rt = replyTarget; hideReplyBar(); addMessage(text, 'outgoing', { sealed: payload, via: 'qr', to: (typeof activeProfileId !== 'undefined' ? activeProfileId : null) || '', viewOnce: once, replyTo: rt || '', fwd: wasFwd }); $('#messageInput').value = ''; updateMsgCount(); closeAll(); await flushVaultSave(); await presentTransfer(payload); } catch (e) { $('#phraseInput').setCustomValidity(e.message || 'Could not seal.'); $('#phraseInput').reportValidity(); } finally { button.disabled = false; button.innerHTML = 'Seal and create QR <span>→</span>'; $('#phraseInput').value = ''; } };
+$('#openReceive').onclick = () => { qrCollectorReset(); openModal('#receiveDialog'); };
+$('#decryptPayload').onclick = async () => { const status = $('#receiveStatus'); status.textContent = ''; let phrase = $('#receivePhrase').value; try { if (vaultMode === 'locked') { openVaultDialog('unlock'); throw new Error('History is locked — unlock first.'); } let sealed = $('#payloadInput').value.trim(); if (sealed.startsWith('XMQ1.')) { const chunks = sealed.split(/\s+/).filter(s => s.startsWith('XMQ1.')); try { sealed = qrAssemble(chunks); status.textContent = `Assembled ${chunks.length} QR parts — enter the phrase to decrypt.`; } catch (e) { throw new Error((e && e.message) || 'Incomplete QR code: paste every part.'); } } if (sealed.startsWith('XM2.') && v2paired && v2recv) { const out = await xm2call('open', { handle: v2recv, envelope: sealed }); addMessage(out.text, 'incoming', { sealed, via: 'xm2', to: 'v2-paired' }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; return; } if (sealed.startsWith('XM2.')) throw new Error('This is a v2 envelope — pair the v2 contact first (sidebar → Pair v2 contact).'); const text = await decryptText(sealed, phrase); phrase = ''; addMessage(text, 'incoming', { sealed, via: currentVia }); closeAll(); await flushVaultSave(); $('#payloadInput').value = ''; $('#receivePhrase').value = ''; } catch (e) { status.textContent = e.message || 'Could not decrypt: incorrect phrase or altered / unsupported transfer.'; } finally { phrase = ''; $('#receivePhrase').value = ''; } };
+$('#copyPayload').onclick = async () => { try { await navigator.clipboard.writeText(currentPayload); clearClipboardLater(); $('#copyPayload').textContent = 'Copied (clears in 30s)'; setTimeout(() => $('#copyPayload').textContent = 'Copy encrypted text', 1300); } catch { $('#copyPayload').textContent = 'Copy unavailable'; } };
+$('#downloadPayload').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([currentPayload], { type: 'text/plain' })), download: `x-messenger-${Date.now()}.xmsg` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); };
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = closeAll); document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+$('#showSecurity').onclick = () => openModal('#securityDialog'); $('#learnMore').onclick = () => openModal('#whyDialog'); $('#showAbout').onclick = () => openModal('#aboutDialog'); $('#showDonate').onclick = () => openModal('#donateDialog'); $('#openDonate').onclick = () => { closeAll(); openModal('#donateDialog'); };
+// Keep the in-app summary focused on properties the application can verify.
+// The full threat model remains in SECURITY.md for publication and review.
+$('#securityDialog').querySelector('.modal-content').innerHTML = '<div class="modal-kicker">SECURITY PROPERTIES</div><h2>Built for private offline transfer</h2><div class="guide-grid"><div><b>✈</b><p><strong>Works in airplane mode</strong><small>Android has no Internet permission. Linux accepts the GUI only on this device’s loopback address.</small></p></div><div><b>✓</b><p><strong>Authenticated encryption</strong><small>AES-256-GCM detects changed ciphertext when the correct phrase is used.</small></p></div><div><b>✓</b><p><strong>Phrase stays separate</strong><small>The shared phrase is never included in the QR code or encrypted payload.</small></p></div><div><b>✓</b><p><strong>Local recipient labels</strong><small>Names and notes stay on this device; no account or remote contact service is created.</small></p></div></div><p class="subtle">v1.0.8 · Unlike online messengers: no signal, no account, no server. Needs independent audit before high-risk use.</p>';
+document.querySelector('.security-score strong').textContent = 'Works in airplane mode';
+document.querySelector('.security-score p').textContent = 'No account, no number, no server';
+// Launch lands straight in the messenger — no splash screens, ever. The
+// guides stay one tap behind their buttons. The seen-flag is still recorded
+// (and still wiped by delete-all) so returning devices stay quiet too.
+try {
+  if (!localStorage.getItem('x-messenger-why-seen-v1')) {
+    localStorage.setItem('x-messenger-why-seen-v1', '1');
+  }
+} catch {};
+for (const [name, address] of donations) { const row = document.createElement('button'); row.className = 'donate-row'; row.innerHTML = `<strong>${name}</strong><code>${address}</code><span>Copy</span>`; row.onclick = async () => { try { await navigator.clipboard.writeText(address); clearClipboardLater(); row.querySelector('span').textContent = 'Copied'; setTimeout(() => row.querySelector('span').textContent = 'Copy', 1200); } catch {} }; $('#donateList').append(row); }
+// Multi-part QR ingest: XMQ1 parts arrive in any order (or repeat while the
+// camera lingers). Collect by code id; only a complete set assembles, and
+// the result flows through the exact same handlers as a single scan.
+let qrCollector = null;
+function qrCollectorReset() { qrCollector = null; }
+function ingestQrPart(text) {
+  const p = qrParseChunk(text);
+  if (!qrCollector || qrCollector.id !== p.id) qrCollector = { id: p.id, chunks: new Map() };
+  qrCollector.chunks.set(p.i, text);
+  return { id: p.id, n: p.n, have: qrCollector.chunks.size };
+}
+function qrTakeAssembled() {
+  if (!qrCollector) throw new Error('No QR parts yet.');
+  const out = qrAssemble([...qrCollector.chunks.values()]);
+  qrCollector = null;
+  return out;
+}
+function ingestScannedText(data) {
+  if (data.startsWith('XM1.') || data.startsWith('XM2.')) {
+    $('#payloadInput').value = data;
+    $('#receiveStatus').textContent = 'QR received. Enter the phrase to decrypt (v2 envelopes need a paired contact).';
+    stopScanner();
+    return;
+  }
+  if (data.trim().startsWith('{')) {
+    try {
+      const o = JSON.parse(data);
+      const isCode = o && o.ecdh && o.mlkem && o.half;
+      const isCt = o && o.ct;
+      if (isCode || isCt) {
+        buildPairDialog(); document.getElementById(isCode ? 'v2PeerCode' : 'v2PeerCt').value = data;
+        const st = document.getElementById('v2PairStatus');
+        if (st) st.textContent = isCode ? 'Their code scanned — press 2 · Encapsulate.' : 'Their ciphertext scanned — press 3 · Compare fingerprint.';
+        stopScanner();
+        try { closeAll(); } catch {}
+        openModal('#pairDialog');
+        return;
+      }
+    } catch {}
+  }
+}
+async function scanLoop() { const video = $('#scanner'), canvas = document.createElement('canvas'), context = canvas.getContext('2d', { willReadFrequently: true }); const tick = () => { if (!scanning) return; if (video.readyState >= 2) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; context.drawImage(video, 0, 0); const found = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' }); const data = found && found.data ? found.data : ''; if (data.startsWith('XMQ1.')) { try { const st = ingestQrPart(data); if (st.have >= st.n) { const full = qrTakeAssembled(); stopScanner(); ingestScannedText(full); return; } $('#receiveStatus').textContent = `QR part ${st.have}/${st.n} received — keep scanning the other parts.`; } catch (e) { $('#receiveStatus').textContent = (e && e.message) || 'Unsupported QR part.'; } } else ingestScannedText(data); } scanTimer = requestAnimationFrame(tick); }; tick(); }
+async function startScanner() { try { qrCollectorReset(); const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); $('#scanner').style.display = ''; $('#scanner').srcObject = stream; await $('#scanner').play(); scanning = true; scanLoop(); } catch { $('#receiveStatus').textContent = 'Camera unavailable or denied. Paste encrypted text instead.'; try { $('#scanner').style.display = 'none'; } catch {} try { $('#payloadInput').focus(); } catch {} } }
+function stopScanner() { scanning = false; cancelAnimationFrame(scanTimer); const stream = $('#scanner').srcObject; if (stream) stream.getTracks().forEach(t => t.stop()); $('#scanner').srcObject = null; }
+$('#startCamera').onclick = startScanner;
+const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join(' '); $('#fingerprint').textContent = id.toUpperCase(); $('#deviceId').textContent = `ID ${id.slice(0, 9).toUpperCase()}`; $('#copyFingerprint').onclick = async () => { try { await navigator.clipboard.writeText(id.toUpperCase()); clearClipboardLater(); } catch {} };
+const msgCount = document.createElement('div'); msgCount.id = 'msgCount'; msgCount.className = 'msg-count'; msgCount.textContent = '0 / 900';
+try { $('#messageInput').after(msgCount); } catch {}
+// Chat toolbar: search this session, multi-select, clear chat (1.0.8).
+try {
+  const bar = document.createElement('div'); bar.id = 'chatBar'; bar.className = 'chat-bar';
+  bar.innerHTML = '<input id="chatSearch" type="search" placeholder="Search this session…" autocomplete="off"><span id="selCount" class="msg-count"></span><button id="starFilterBtn" class="icon-button" title="Show starred only">★</button><button id="toggleSelect" class="icon-button" title="Select messages">☑</button><button id="delSelected" class="icon-button" title="Delete selected" style="display:none">🗑</button><button id="expSelected" class="icon-button" title="Export selected sealed envelopes" style="display:none">⤓</button><button id="cancelSelect" class="icon-button" title="Cancel selection" style="display:none">✕</button><button id="clearChat" class="icon-button" title="Delete all session messages">🧹</button>';
+  $('#messages').before(bar);
+  $('#chatSearch').addEventListener('input', e => { chatFilter = e.target.value; renderChat(); });
+  $('#toggleSelect').onclick = () => { selectMode = !selectMode; selectedIds.clear(); renderChat(); };
+  $('#cancelSelect').onclick = () => { selectMode = false; selectedIds.clear(); renderChat(); };
+  $('#delSelected').onclick = () => { if (!selectedIds.size) return; if (!confirm(`Delete ${selectedIds.size} selected message(s) from this device?`)) return; [...selectedIds].forEach(id => deleteMessage(id, true)); selectedIds.clear(); renderChat(); };
+  $('#expSelected').onclick = () => {
+    const envs = chatStore.list.filter(m => selectedIds.has(m.id) && m.sealed).map(m => m.sealed);
+    if (!envs.length) { $('#selCount').textContent = 'No sealed envelopes selected'; return; }
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify({ format: 'x-messenger-envelopes-v1', exportedAt: new Date().toISOString(), envelopes: envs }, null, 2)], { type: 'application/json' })), download: `x-messenger-envelopes-${Date.now()}.json` });
+    link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  };
+  $('#clearChat').onclick = () => clearChat(false);
+  $('#starFilterBtn').onclick = () => { starFilter = !starFilter; $('#starFilterBtn').classList.toggle('on', starFilter); renderChat(); };
+  const chatCss = document.createElement('style');
+  chatCss.textContent = '.chat-bar{display:flex;gap:6px;align-items:center;padding:8px 30px 0}.chat-bar input{flex:1;padding:8px 10px;border:1px solid var(--line,#e6ebf1);border-radius:9px;background:transparent;color:inherit;font:inherit}#toggleSelect.on{background:#e6f8f3}.msg-del{border:0;background:transparent;color:#9aa7b6;font-size:16px;cursor:pointer;align-self:flex-start}.msg-select{width:auto;margin-right:8px}'
+  + '.message{position:relative}.message-bubble{position:relative;user-select:text;-webkit-user-select:text;transition:transform .2s ease-out,box-shadow .2s ease-out}'
+  + '.msg-quote{border-left:3px solid #5488d8;padding:4px 8px;margin-bottom:6px;background:#5488d812;border-radius:0 6px 6px 0;font-size:11px;opacity:.9;white-space:pre-wrap;word-break:break-word}'
+  + '.msg-text{white-space:pre-wrap;word-break:break-word}'
+  + '.msg-menu{position:fixed;z-index:200;min-width:220px;background:#fff;color:#26364a;border-radius:12px;box-shadow:0 12px 40px #0e183b55;padding:6px;animation:msgpop .2s ease-out}'
+  + '.msg-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:10px 12px;border-radius:8px;font:inherit;cursor:pointer}'
+  + '.msg-menu button:hover{background:#f1f4f8}'
+  + '.msg-quick{position:fixed;z-index:200;display:flex;gap:2px;background:#17212b;border-radius:24px;padding:6px 8px;box-shadow:0 12px 40px #0e183b66;animation:msgpop .2s ease-out}'
+  + '.msg-quick button{border:0;background:transparent;color:#fff;font-size:18px;padding:6px 10px;border-radius:16px;cursor:pointer}'
+  + '.msg-quick button:hover{background:#ffffff22}'
+  + '.reply-bar{display:flex;gap:8px;align-items:center;padding:8px 30px 0}.reply-bar .msg-quote{flex:1;margin:0}'
+  + '@keyframes msgpop{from{opacity:0;transform:scale(.96) translateY(4px)}to{opacity:1;transform:none}}'
+  + '@media (prefers-reduced-motion:reduce){.message-bubble,.msg-menu,.msg-quick{transition:none;animation:none}}'
+  + 'html[data-x-theme="dark"] .msg-menu{background:#1a2636;color:#e9eef7}html[data-x-theme="dark"] .msg-menu button:hover{background:#2a3a4f}html[data-x-theme="dark"] .msg-quote{background:#5488d822}';
+  document.head.append(chatCss);
+} catch {}
+function updateMsgCount() { try { const n = $('#messageInput').value.length; msgCount.textContent = `${n} / 900`; msgCount.style.color = n > 900 ? '#c85360' : ''; } catch {} }
+$('#messageInput').addEventListener('input', updateMsgCount); updateMsgCount();
+$('#messageInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#sendMessage').click(); } });
+// Android and the Linux package ship every asset locally. Avoid a service
+// worker cache so an APK or Debian update always loads the current interface.
+if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(items => items.forEach(item => item.unregister())).catch(() => {});
+
+// Phrases are never blocked for being short; this indicator is advice only.
+const strength = document.createElement('strong'); strength.id = 'phraseStrength'; strength.textContent = 'Strength: enter a phrase';
+document.querySelector('.phrase-tips').prepend(strength);
+$('#phraseInput').addEventListener('input', () => { const n = $('#phraseInput').value.length; strength.textContent = `Strength: ${n === 0 ? 'enter a phrase' : n < 8 ? 'weak — easy to guess' : n < 16 ? 'fair — use more unique words' : n < 28 ? 'strong' : 'very strong'}`; $('#phraseInput').setCustomValidity(''); });
+
+// Recipient profiles are local labels only. They are intentionally not presented
+// as accounts, keys, or verified identities.
+const PROFILE_KEY = 'x-messenger-recipients';
+let activeProfileId = null;
+const profileStyles = document.createElement('style');
+profileStyles.textContent = '.recipient-heading{margin:10px 9px 2px;color:#8fa3ba;font:9px monospace;letter-spacing:.7px}.recipient-list{display:grid;gap:4px}.recipient-list .thread{padding:8px}.recipient-list .avatar{width:32px;height:32px;font-size:11px}'; document.head.append(profileStyles);
+$('#newTransfer').innerHTML = '<span>＋</span> New local chat';
+// Contacts live ONLY in the Users page (never duplicated in the sidebar).
+// renderProfiles() is kept as a no-op refresh hook for all call sites.
+const profileDialog = document.createElement('dialog'); profileDialog.className = 'modal'; profileDialog.id = 'profileDialog'; profileDialog.innerHTML = '<button class="modal-close" data-profile-close>×</button><div class="modal-content"><div class="modal-kicker">START LOCAL CHAT</div><h2>Add a recipient</h2><p>Create a private name and optional note, then start an offline chat. This label stays only on this device; it is not an account or verified identity.</p><label>Name<input id="profileName" maxlength="40" placeholder="Name or callsign"></label><label>Private note (optional)<input id="profileNote" maxlength="120" placeholder="How you know or verify this person"></label><button class="primary-large" id="saveProfile">Start chat <span>→</span></button></div>';
+document.body.append(profileDialog); profileDialog.querySelector('[data-profile-close]').onclick = () => profileDialog.close();
+function profiles() { try { const saved = JSON.parse(localStorage.getItem(PROFILE_KEY)); return Array.isArray(saved) ? saved : []; } catch { return []; } }
+function saveProfiles(items) { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(items)); } catch {} }
+function initials(name) { return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('').toUpperCase() || '•'; }
+function activateProfile(profile) { activeProfileId = profile.id; threadFor = profile.id; $('#viewIcon').textContent = initials(profile.name); $('#viewTitle').textContent = profile.name; $('#viewSubtitle').textContent = (profile.note || 'Local offline recipient') + ' — thread (only messages for this contact)'; $('#messageInput').placeholder = `Write an encrypted message for ${profile.name}…`; document.querySelectorAll('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === 'saved')); currentView = 'saved'; renderProfiles(); renderChat(); try { $('#messageInput').focus(); } catch {} }
+function deleteProfile(id) {
+  const items = profiles().filter(p => p.id !== id);
+  saveProfiles(items);
+  if (activeProfileId === id) { activeProfileId = null; threadFor = null; try { $('#messageInput').placeholder = 'Write a private message…'; } catch {} }
+  renderProfiles(); renderChat();
+}
+// Users page: every local contact with Send text + Delete. Labels only —
+// no accounts, nothing uploaded.
+function renderUsersPane(box) {
+  const head = document.createElement('div'); head.className = 'view-head';
+  const t = document.createElement('strong'); t.textContent = `Users (${profiles().length}/100)`;
+  const s = document.createElement('span'); s.textContent = 'Local contacts on this device. Deleting the app data removes all of them.';
+  const add = document.createElement('button'); add.className = 'primary-large view-cta'; add.textContent = '＋ Add user';
+  add.onclick = () => { try { profileDialog.showModal(); } catch {} };
+  head.append(t, s, add); box.append(head);
+  const list = profiles();
+  if (!list.length) {
+    const w = document.createElement('div'); w.className = 'welcome-card';
+    w.innerHTML = '<div class="welcome-icon">▤</div><h2>No users yet.</h2><p>Add a local contact to address sealed messages. Names never leave this device.</p>';
+    box.append(w); return;
+  }
+  const wrap = document.createElement('div'); wrap.className = 'user-list';
+  for (const p of list) {
+    const card = document.createElement('div'); card.className = 'user-card';
+    const av = document.createElement('span'); av.className = 'avatar amber'; av.textContent = initials(p.name);
+    const copy = document.createElement('div'); copy.className = 'user-copy';
+    const nm = document.createElement('strong'); nm.textContent = p.name;
+    const nt = document.createElement('small'); nt.textContent = p.note || 'Tap Send to write an encrypted message';
+    copy.append(nm, nt);
+    const btns = document.createElement('div'); btns.className = 'user-actions';
+    const send = document.createElement('button'); send.className = 'primary-large view-cta'; send.textContent = 'Send text →';
+    send.onclick = () => { setView('saved'); activateProfile(p); };
+    const del = document.createElement('button'); del.className = 'ghost-button'; del.textContent = 'Delete';
+    del.onclick = () => { if (confirm(`Delete local contact "${p.name}" from this device?`)) deleteProfile(p.id); };
+    btns.append(send, del); card.append(av, copy, btns); wrap.append(card);
+  }
+  box.append(wrap);
+}
+// Pair v2 page: connection status + paired contact + actions.
+function renderPairPane(box) {
+  const head = document.createElement('div'); head.className = 'view-head';
+  const t = document.createElement('strong'); t.textContent = 'Pair v2 contact';
+  const pill = document.createElement('div'); pill.className = 'conn-pill'; pill.id = 'v2ConnPillPane';
+  const s = document.createElement('span');
+  if (v2paired) {
+    pill.textContent = '● Connected'; pill.dataset.on = '1';
+    let nXm2 = 0;
+    try { nXm2 = chatStore.list.filter(m => m.via === 'xm2').length; } catch {}
+    s.textContent = `Post-quantum session ready — new seals in its thread use XM2 (${nXm2} XM2 message${nXm2 === 1 ? '' : 's'} this session). Old XM1 messages still open.`;
+  } else {
+    pill.textContent = '○ Not connected'; pill.dataset.on = '';
+    const cap = xm2capability();
+    s.textContent = cap.ok
+      ? 'No v2 contact paired. Pair face to face (both phones swap codes + compare the fingerprint out loud). XM1 transfers work without pairing.'
+      : cap.reason;
+  }
+  head.append(t, pill, s);
+  const row = document.createElement('div'); row.className = 'view-actions';
+  const open = document.createElement('button'); open.className = 'primary-large view-cta'; open.textContent = v2paired ? '◈ Pairing steps' : '◈ Start pairing';
+  open.onclick = () => { buildPairDialog(); v2status(); openModal('#pairDialog'); };
+  if (v2standDown(box)) { open.disabled = true; open.title = 'v2 engine is off on this system browser — ordinary sealed transfers (XM1) work'; }
+  row.append(open);
+  if (v2paired) {
+    const fp = document.createElement('div'); fp.className = 'fingerprint';
+    const lr = document.createElement('div'); lr.className = 'label-row';
+    const lab = document.createElement('span'); lab.textContent = 'PAIRED SESSION FINGERPRINT';
+    lr.append(lab);
+    const code = document.createElement('code'); code.textContent = v2fpText || '—';
+    fp.append(lr, code); head.append(fp);
+    const send = document.createElement('button'); send.className = 'primary-large view-cta'; send.textContent = 'Open paired thread →';
+    send.onclick = () => {
+      try {
+        const mate = profiles().find(p => p.id === 'v2-paired');
+        if (mate) { activateProfile(mate); return; }
+      } catch {}
+      setView('saved'); try { document.getElementById('messageInput').focus(); } catch {}
+    };
+    const unp = document.createElement('button'); unp.className = 'ghost-button'; unp.textContent = 'Unpair';
+    unp.onclick = () => { v2unpair(); renderChat(); };
+    row.append(send, unp);
+  }
+  head.append(row); box.append(head);
+}
+function renderProfiles() { try { if (currentView === 'users') renderChat(); } catch {} }
+$('#saveProfile').onclick = () => { const name = $('#profileName').value.trim().slice(0, 40), note = $('#profileNote').value.trim().slice(0, 120); if (!name) { $('#profileName').setCustomValidity('Give this local profile a name.'); $('#profileName').reportValidity(); return; } const saved = profiles(); if (saved.length >= 100) { $('#profileName').setCustomValidity('Too many local recipients (max 100). Delete one first.'); $('#profileName').reportValidity(); return; } if (saved.some(p => p.name.toLowerCase() === name.toLowerCase())) { $('#profileName').setCustomValidity('That name already exists locally.'); $('#profileName').reportValidity(); return; } const profile = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, name, note }; saved.push(profile); saveProfiles(saved); renderProfiles(); profileDialog.close(); $('#profileName').value = ''; $('#profileNote').value = ''; activateProfile(profile); };
+$('#newTransfer').onclick = startChat;
+renderProfiles();
+
+// Settings and backups are intentionally local. Export is explicit and restore
+// accepts only the small versioned X Messenger backup format.
+const SETTINGS_KEY = 'x-messenger-settings';
+const settingDialog = document.createElement('dialog');
+settingDialog.className = 'modal settings-modal'; settingDialog.id = 'settingsDialog';
+settingDialog.innerHTML = '<button class="modal-close" data-settings-close>×</button><div class="modal-content"><div class="modal-kicker">SETTINGS & PRIVACY</div><h2>Make X Messenger yours</h2><label>Theme<select id="themeSetting"><option value="system">System default</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Text size <input id="fontSetting" type="range" min="14" max="20" step="1"><span id="fontValue"></span></label><h3 style="margin:18px 0 4px;font-size:13px">Connection (Linux GUI)</h3><p class="subtle" id="connStatus">Loading connection…</p><label>Custom port (1–65535; 8443 local/LAN, 443 VPS normal HTTPS)<input id="portSetting" type="number" min="1" max="65535" step="1" placeholder="8443"></label><label>Custom domain — VPS only, e.g. msg.example.com (what it is for: your private address instead of an IP; needs DNS + Let’s Encrypt)<input id="domainSetting" placeholder="msg.example.com"></label><label style="display:flex;gap:8px;align-items:center;font-weight:400"><input id="lanConsent" type="checkbox" style="width:auto"> I understand LAN/VPS sharing is observable as encrypted TLS (IP/domain/port/sizes) on the network</label><div class="settings-actions"><button id="applyPort">Apply port (restarts GUI)</button><button id="enableLan">Share on LAN (needs consent)</button><button id="enableVps">Use my VPS domain (needs consent)</button><button id="backLoopback">Back to loopback only</button></div><h3 style="margin:14px 0 4px;font-size:13px">TLS certificate</h3><p class="subtle" id="tlsStatus">Loading certificate…</p><div class="settings-actions"><button id="copyTlsFp">Copy cert fingerprint</button><button id="regenCertInfo">How to regenerate cert</button></div><div class="settings-actions"><button id="exportData">Export local backup</button><button id="restoreData">Restore local backup</button><button class="danger-button" id="deleteData">Delete all local data</button></div><input id="restoreFile" type="file" accept="application/json,.json" hidden><p class="subtle" id="settingsStatus">Backups contain local recipient labels and preferences only. Shared phrases are never saved.</p><button class="security-button" id="openSecurityGuide">Security properties <span>→</span></button></div>';
+document.body.append(settingDialog); settingDialog.querySelector('[data-settings-close]').onclick = () => settingDialog.close();
+// Vault controls: lock now, change passphrase, status. Plaintext history is
+// sealed on this device only; nothing here touches any network.
+try {
+  const vaultBox = document.createElement('div');
+  vaultBox.innerHTML = '<h3 style="margin:14px 0 4px;font-size:13px">Locked history</h3><p class="subtle" id="vaultStatus">Loading vault…</p><div class="settings-actions"><button id="vaultLockBtn">Lock now</button><button id="vaultChangeBtn">Change passphrase</button><button id="vaultSetupBtn">Set up vault</button></div>';
+  settingDialog.querySelector('.modal-content').append(vaultBox);
+  const vaultStatusText = () => {
+    const el = document.getElementById('vaultStatus');
+    if (!el) return;
+    el.textContent = vaultMode === 'open' ? 'Open — history seals to this device as you write.' : vaultMode === 'locked' ? 'Locked — messages are sealed ciphertext on this device.' : 'Off — history lives only until you close or lock.';
+  };
+  document.getElementById('vaultLockBtn').onclick = async () => { await vaultLock(); vaultStatusText(); renderChat(); };
+  document.getElementById('vaultSetupBtn').onclick = () => { settingDialog.close(); openVaultDialog(localStorage.getItem(VAULT_KEY) ? 'unlock' : 'setup'); setTimeout(vaultStatusText, 600); };
+  document.getElementById('vaultChangeBtn').onclick = () => { settingDialog.close(); openVaultDialog('change'); setTimeout(vaultStatusText, 600); };
+  document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'settings') setTimeout(vaultStatusText, 60); }));
+} catch {}
+const settingStyles = document.createElement('style');
+settingStyles.textContent = 'html{font-size:var(--x-font-size,16px)}'
++ 'html[data-x-theme="dark"]{--navy:#101823;--ink:#e9eef7;--muted:#aebbcd;--line:#2f4359;--bg:#0c131d}'
++ 'html[data-x-theme="dark"] body{background:#0c131d;color:#e9eef7}'
++ 'html[data-x-theme="dark"] .app-shell{background:#141e2c;box-shadow:0 24px 70px #00000088}'
++ 'html[data-x-theme="dark"] .conversation,html[data-x-theme="dark"] .security-panel{background:#141e2c}'
++ 'html[data-x-theme="dark"] .topbar{border-color:#2f4359}'
++ 'html[data-x-theme="dark"] .contact h1{color:#eef2fa}html[data-x-theme="dark"] .contact p{color:#aebbcd}'
++ 'html[data-x-theme="dark"] .icon-button{background:#1a2636;border-color:#33475e;color:#c6d3e6}'
++ 'html[data-x-theme="dark"] .security-ribbon{background:#122b28;color:#8fd9c6}'
++ 'html[data-x-theme="dark"] .message-area{background:#0f1722}'
++ 'html[data-x-theme="dark"] .welcome-card{color:#b9c5d8}html[data-x-theme="dark"] .welcome-card h2{color:#f0f4fb}'
++ 'html[data-x-theme="dark"] .welcome-card button,html[data-x-theme="dark"] .security-button{background:#1a2636;border-color:#33475e;color:#9db8f5}'
++ 'html[data-x-theme="dark"] .message-bubble{background:#1e2c40;color:#e9eef7}html[data-x-theme="dark"] .outgoing .message-bubble{background:#14332c;color:#d9f5ec}html[data-x-theme="dark"] .message time{color:#8ea0b5}'
++ 'html[data-x-theme="dark"] .composer-wrap{border-color:#2f4359}html[data-x-theme="dark"] .composer{background:#101b29;border-color:#33475e}html[data-x-theme="dark"] .composer textarea{color:#e9eef7}html[data-x-theme="dark"] .composer textarea::placeholder{color:#7d8fa6}html[data-x-theme="dark"] .composer-wrap>p{color:#7d8fa6}html[data-x-theme="dark"] .barcode-button{color:#9db8f5}'
++ 'html[data-x-theme="dark"] .panel-heading h2{color:#eef2fa}html[data-x-theme="dark"] .panel-heading p,html[data-x-theme="dark"] .security-score p{color:#9fb0c4}html[data-x-theme="dark"] .security-score strong{color:#eef2fa}'
++ 'html[data-x-theme="dark"] .score-ring{background:radial-gradient(closest-side,#141e2c 76%,transparent 78%),conic-gradient(#6bd0ba 100%,#2a3a4f 0)}html[data-x-theme="dark"] .score-ring span{color:#7fe0c9}html[data-x-theme="dark"] .score-ring small{color:#7fa3a0}'
++ 'html[data-x-theme="dark"] .protocol-stack>div{border-color:#2f4359}html[data-x-theme="dark"] .protocol-stack strong{color:#e6ebf5}html[data-x-theme="dark"] .protocol-stack small{color:#9fb0c4}'
++ 'html[data-x-theme="dark"] .fingerprint code{background:#101b29;color:#c6d3e6}html[data-x-theme="dark"] .fingerprint p,html[data-x-theme="dark"] .label-row{color:#9fb0c4}html[data-x-theme="dark"] .label-row button{color:#9db8f5}'
++ 'html[data-x-theme="dark"] .modal-content{background:#182435;color:#e9eef7}html[data-x-theme="dark"] .modal h2{color:#f0f4fb}html[data-x-theme="dark"] .modal p{color:#aebdce}html[data-x-theme="dark"] .modal label{color:#c9d4e4}'
++ 'html[data-x-theme="dark"] .modal input,html[data-x-theme="dark"] .modal textarea,html[data-x-theme="dark"] .settings-modal select{background:#0f1a28;color:#e9eef7;border-color:#3a5069}html[data-x-theme="dark"] .modal input::placeholder,html[data-x-theme="dark"] .modal textarea::placeholder{color:#7d8fa6}'
++ 'html[data-x-theme="dark"] .guide-grid>div{border-color:#2f4359;background:#141f30}html[data-x-theme="dark"] .guide-grid strong{color:#e6ebf5}html[data-x-theme="dark"] .guide-grid small{color:#a3b3c7}html[data-x-theme="dark"] .guide-grid b{color:#6fd5bd}'
++ 'html[data-x-theme="dark"] .qr-wrap{background:#0f1a28}html[data-x-theme="dark"] .transfer-meta{color:#9fb0c4}html[data-x-theme="dark"] .export-row button{background:#1a2636;border-color:#33475e;color:#c6d3e6}'
++ 'html[data-x-theme="dark"] .donate-row{background:#141f30;border-color:#2f4359;color:#dbe3f0}html[data-x-theme="dark"] .donate-row code{color:#9fb0c4}html[data-x-theme="dark"] .donate-row span{color:#9db8f5}'
++ 'html[data-x-theme="dark"] .about-modal ol{color:#aebdce}html[data-x-theme="dark"] .about-modal a{color:#9db8f5}'
++ 'html[data-x-theme="dark"] .phrase-tips{color:#9fb0c4}html[data-x-theme="dark"] #phraseStrength{color:#8fd9c6}'
++ 'html[data-x-theme="dark"] .recipient-heading{color:#8ea0b5}html[data-x-theme="dark"] .msg-count{color:#8ea0b5}'
++ '.settings-actions{display:grid;gap:9px;margin:18px 0}.settings-actions button,.settings-modal select{border:1px solid var(--line);border-radius:10px;padding:11px;background:#f5f8fc;color:var(--ink);font:inherit;font-weight:700}html[data-x-theme="dark"] .settings-actions button,html[data-x-theme="dark"] .settings-modal select{background:#1a2636;border-color:#33475e;color:#e9eef7}.settings-modal input[type="range"]{width:100%}.danger-button{color:#b42318!important;border-color:#efb4ae!important}html[data-x-theme="dark"] .danger-button{color:#ff9d94!important;border-color:#7a3a36!important;background:#2a1a19!important}.settings-modal label{display:grid;gap:7px;margin-top:13px;font-weight:700}'
++ '.msg-count{font:9px monospace;color:#9aa7b6;text-align:right;margin-top:4px}'
++ '.message-bubble,.welcome-card p,.modal p,.composer textarea{font-size:calc(var(--x-font-size,16px)*0.75)}'
++ '.welcome-card h2,.modal h2{font-size:calc(var(--x-font-size,16px)*1.25)}'
++ '.contact h1,.protocol-stack strong{font-size:calc(var(--x-font-size,16px)*0.875)}'; document.head.append(settingStyles);
+function readSettings() { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; } }
+function applySettings(settings = readSettings()) { const theme = ['system', 'light', 'dark'].includes(settings.theme) ? settings.theme : 'system'; const resolved = theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme; document.documentElement.dataset.xTheme = resolved; try { document.querySelector('meta[name="theme-color"]').content = resolved === 'dark' ? '#0c131d' : '#17212b'; } catch {} const size = Math.min(20, Math.max(14, Number(settings.fontSize) || 16)); document.documentElement.style.setProperty('--x-font-size', `${size}px`); $('#themeSetting').value = theme; $('#fontSetting').value = size; $('#fontValue').textContent = `${size}px`; }
+// System theme follows the OS live: re-resolve only while the user keeps
+// System selected (explicit light/dark never move). Font size is re-read
+// from stored settings every time, so it can never reset on theme change.
+let themeMediaArmed = false;
+try {
+  const themeMedia = matchMedia('(prefers-color-scheme: dark)');
+  const followSystemTheme = () => { try { if ((readSettings().theme || 'system') === 'system') applySettings(); } catch {} };
+  if (typeof themeMedia.addEventListener === 'function' && !themeMediaArmed) { themeMedia.addEventListener('change', followSystemTheme); themeMediaArmed = true; }
+} catch {}
+function saveSettings(next) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); applySettings(next); }
+applySettings();
+$('#themeSetting').onchange = event => saveSettings({ ...readSettings(), theme: event.target.value });
+$('#fontSetting').oninput = event => saveSettings({ ...readSettings(), fontSize: Number(event.target.value) });
+function localBackup() { const data = {}; [PROFILE_KEY, SETTINGS_KEY].forEach(key => { const value = localStorage.getItem(key); if (value !== null) data[key] = value; }); const envelopes = chatStore.list.filter(m => m.sealed).slice(-500).map(m => ({ sealed: m.sealed, via: m.via, to: m.to || '', dir: m.dir || 'incoming', ts: m.ts })); return { format: 'x-messenger-local-backup-v2', exportedAt: new Date().toISOString(), data, envelopes }; }
+function openEnvelope(id) {
+  const m = chatStore.list.find(x => x.id === id);
+  if (!m || !m.sealed) return;
+  currentVia = m.via || 'qr';
+  $('#payloadInput').value = m.sealed;
+  openModal('#receiveDialog');
+  $('#receiveStatus').textContent = 'Sealed envelope loaded. Enter the phrase to decrypt.';
+}
+$('#exportData').onclick = () => { const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(localBackup(), null, 2)], { type: 'application/json' })), download: `x-messenger-backup-${Date.now()}.json` }); link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0); $('#settingsStatus').textContent = 'Local backup downloaded (labels, settings, sealed envelopes — never plaintext or phrases). Store it securely.'; };
+$('#restoreData').onclick = () => $('#restoreFile').click();
+$('#restoreFile').onchange = async event => { const file = event.target.files[0]; if (!file) return; try { if (file.size > 512 * 1024) throw new Error('Backup too large (max 512KB).'); const backup = JSON.parse(await file.text()); if ((backup.format !== 'x-messenger-local-backup-v2' && backup.format !== 'x-messenger-local-backup-v1') || !backup.data || typeof backup.data !== 'object') throw new Error('Invalid X Messenger backup.'); for (const key of [PROFILE_KEY, SETTINGS_KEY]) { const v = backup.data[key]; if (v === undefined) continue; if (typeof v !== 'string' || v.length > 100 * 1024) throw new Error('Invalid backup entry.'); if (key === PROFILE_KEY) { const arr = JSON.parse(v); if (!Array.isArray(arr) || arr.length > 100) throw new Error('Invalid recipient list.'); for (const p of arr) { if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new Error('Invalid recipient entry.'); } } localStorage.setItem(key, v); } let n = 0; if (Array.isArray(backup.envelopes)) { if (backup.envelopes.length > 500) throw new Error('Too many envelopes (max 500).'); for (const e of backup.envelopes) { if (!e || typeof e.sealed !== 'string' || !(e.sealed.startsWith('XM1.') || e.sealed.startsWith('XM2.')) || e.sealed.length > 32772) throw new Error('Invalid sealed envelope.'); chatStore.list.push({ id: `m${++chatStore.seq}-${Date.now().toString(36)}`, dir: e.dir === 'outgoing' ? 'outgoing' : 'incoming', text: '', sealed: e.sealed, via: typeof e.via === 'string' ? e.via.slice(0, 8) : '', to: typeof e.to === 'string' ? e.to.slice(0, 60) : '', ts: Number(e.ts) || Date.now(), viewOnce: false, expiresAt: 0, sealedOnly: true }); n++; } } renderProfiles(); applySettings(); renderChat(); scheduleVaultSave(); $('#settingsStatus').textContent = n ? `Backup restored on this device (+${n} sealed envelopes — tap 🔒 to open).` : 'Backup restored on this device.'; } catch (error) { $('#settingsStatus').textContent = error.message; } event.target.value = ''; };
+$('#deleteData').onclick = async () => { if (!confirm('Delete ALL X Messenger data from this device (vault history, labels, settings, session messages, sealed envelopes)? This cannot be undone.')) return; const labels = profiles().length; const msgs = chatStore.list.length; vaultMode = 'none'; vaultPhrase = ''; try { clearTimeout(vaultSaveTimer); } catch {} try { v2unpair(); } catch {} try { if (typeof xm2forgetAll === 'function') await xm2forgetAll(); } catch {} pendingText = ''; pendingForward = false; pendingRekey = null; try { replyTarget = null; document.getElementById('replyBar')?.remove(); } catch {} wipeSession(); currentPayload = ''; try { clearClipboardNow(); } catch {} [VAULT_KEY, PROFILE_KEY, SETTINGS_KEY, 'x-messenger-why-seen-v1', V2BROKEN_KEY].forEach(key => { try { if (key) localStorage.removeItem(key); } catch {} }); activeProfileId = null; threadFor = null; renderProfiles(); applySettings({}); $('#settingsStatus').textContent = `Verified wipe: vault history, ${labels} label(s), settings, ${msgs} session message(s) removed. Reload for a clean slate.`; };
+$('#openSecurityGuide').onclick = () => { settingDialog.close(); openModal('#securityDialog'); };
+function validDomainUi(d) { return typeof d === 'string' && /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?\.[a-z]{2,}$/i.test(d.trim()); }
+async function refreshConn() {
+  try {
+    const r = await fetch('/api/info', { cache: 'no-store' });
+    if (!r.ok) throw new Error('no api');
+    const info = await r.json();
+    const where = info.bind === 'vps' ? `on VPS ${info.domain || info.host} (normal HTTPS; provider/DNS see domain+IP+sizes)` : info.bind === 'lan' ? 'on LAN (observable encrypted TLS)' : 'on loopback only (this device, zero egress)';
+    $('#connStatus').textContent = `Running ${where} at https://${info.host}${info.port === 443 ? '' : `:${info.port}`} · v${info.version}`;
+    try {
+      const b = info.build && info.build.commit ? ` · build ${info.build.commit}${info.build.date ? ' ' + String(info.build.date).slice(0, 10) : ''}` : '';
+      const kick = document.querySelector('#aboutDialog .modal-kicker');
+      if (kick) kick.textContent = `ABOUT X MESSENGER v${info.version}${b}`;
+      let tag = document.getElementById('buildTag');
+      if (!tag) { tag = document.createElement('small'); tag.id = 'buildTag'; tag.className = 'msg-count'; document.querySelector('.device-card div')?.append(tag); }
+      if (tag) tag.textContent = b ? `build${b}` : '';
+    } catch {}
+    if (!$('#portSetting').value) $('#portSetting').placeholder = `${info.port} (current)`;
+    if (info.domain && !$('#domainSetting').value) $('#domainSetting').placeholder = `${info.domain} (current)`;
+    const t = info.tls || {};
+    $('#tlsStatus').textContent = `SHA256 ${t.fingerprint256 || '—'} · ${t.validFrom || ''} → ${t.validTo || ''} · SAN ${t.san || ''} · issuer ${t.issuer || ''}`;
+    $('#tlsStatus').dataset.fp = t.fingerprint256 || '';
+  } catch {
+    try {
+      $('#connStatus').textContent = 'Connection info unavailable (Android serves assets directly and stays offline; port/domain/TLS apply to Linux GUI: x-messenger setup).';
+      $('#tlsStatus').textContent = 'TLS info unavailable here. On Linux run: x-messenger gui --cert-info';
+    } catch {}
+  }
+}
+const _openSettings = openModal;
+$('#copyTlsFp').onclick = async () => { try { await navigator.clipboard.writeText($('#tlsStatus').dataset.fp || ''); clearClipboardLater(); $('#tlsStatus').textContent += ' — copied (clears in 30s)'; } catch {} };
+$('#regenCertInfo').onclick = () => { $('#settingsStatus').textContent = 'Loopback/LAN self-signed: quit GUI, run: x-messenger gui --regen-cert [--lan]. VPS Let’s Encrypt: see docs/vps-domain-cloudflare.md, then compare the new SHA256 fingerprint in person.'; };
+$('#applyPort').onclick = () => { const p = Number($('#portSetting').value); if (!Number.isInteger(p) || p < 1 || p > 65535) { $('#settingsStatus').textContent = 'Port must be 1–65535 (1024+ recommended; 443 needs capability).'; return; } $('#settingsStatus').textContent = `Port staged: ${p}. Quit GUI and run: x-messenger gui --port ${p}. Defaults: 8443 local/LAN, 443 VPS.`; };
+$('#enableLan').onclick = () => { if (!$('#lanConsent').checked) { $('#settingsStatus').textContent = 'Tick consent first: LAN TLS is encrypted but observable (IP/port/sizes).'; return; } const p = Number($('#portSetting').value) || 8443; $('#settingsStatus').textContent = `To share on LAN: quit GUI and run: x-messenger gui --lan --port ${p}. Others on your network will see encrypted connections — compare cert fingerprint in person.`; };
+$('#enableVps').onclick = () => { const d = ($('#domainSetting').value || '').trim().toLowerCase(); if (!$('#lanConsent').checked) { $('#settingsStatus').textContent = 'Tick consent first: VPS TLS is normal HTTPS but provider/DNS see domain+IP+sizes.'; return; } if (!validDomainUi(d)) { $('#settingsStatus').textContent = 'Enter your public domain first, e.g. msg.example.com (needs DNS + Let’s Encrypt; see docs/vps-domain-cloudflare.md).'; return; } const p = Number($('#portSetting').value) || 443; $('#settingsStatus').textContent = `To serve your domain: quit GUI and run: x-messenger gui --vps --domain ${d} --port ${p}. Keep Cloudflare grey-cloud (DNS-only) for end-to-end (content stays XM1).`; };
+$('#backLoopback').onclick = () => { $('#settingsStatus').textContent = 'To return to safest offline mode: quit GUI and run: x-messenger gui --loopback --port 8443.'; };
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { if (b.dataset.view === 'settings') setTimeout(refreshConn, 50); }));
+// v2 Post-Quantum UI (1.1.0, experimental — unaudited). Same Go core as the
+// terminal demo, running in-page as WebAssembly. New seals default to XM2
+// when a v2 contact is paired; XM1 envelopes always still open (read both,
+// write v2). Session-only: handles die with the page; nothing persists.
+let xm2p = null, v2send = null, v2recv = null, v2paired = false, v2fpText = '';
+// Capability pre-flight: the Go WASM bridge needs WebAssembly + BigInt.
+// Old system WebViews (e.g. un-updated Android 9) fail here — fail closed
+// with an honest, actionable message instead of "bridge failed to start".
+function xm2capability() {
+  if (typeof WebAssembly === 'undefined' || typeof WebAssembly.instantiate !== 'function') {
+    return { ok: false, reason: 'This device browser has no WebAssembly. Update Android System WebView (Play Store), then retry. XM1 QR transfers work fine without v2.' };
+  }
+  if (typeof BigInt === 'undefined') {
+    return { ok: false, reason: 'This device browser is too old for the v2 engine (needs BigInt). Update Android System WebView, then retry. XM1 QR transfers work fine without v2.' };
+  }
+  return { ok: true };
+}
+// App bundle version for cache-busting engine files (parsed from our own
+// script URL: app.js?v=X.Y.Z). Stale cached wasm_exec.js is a real-world
+// bridge killer on phones that tested older releases.
+function xm2appV() {
+  try {
+    const src = (document.currentScript && document.currentScript.src) || '';
+    const m = src.match(/[?&]v=([^&]+)/);
+    if (m) return m[1];
+  } catch {}
+  return '1';
+}
+// Device facts for support (no secrets: booleans, versions, sizes, timings).
+function xm2diag() {
+  const d = { ok: false, wasm: typeof WebAssembly !== 'undefined', bigInt: typeof BigInt !== 'undefined' };
+  try {
+    d.goDefined = typeof Go !== 'undefined';
+    d.bridge = typeof window.xm2 !== 'undefined';
+    d.ua = (navigator.userAgent || '').slice(0, 160);
+    d.url = String(location.protocol + '//' + location.host + location.pathname).slice(0, 120);
+    d.paired = !!v2paired;
+    d.lastError = window._v2lastError || '';
+    d.ok = d.wasm && d.bigInt && d.goDefined && d.bridge;
+  } catch (e) { d.error = String((e && e.message) || e).slice(0, 120); }
+  return d;
+}
+function xm2load() {
+  if (xm2p) return xm2p;
+  xm2p = (async () => {
+    const t0 = Date.now();
+    const note = (e) => { try { window._v2lastError = String((e && e.message) || e).slice(0, 200); } catch {} };
+    // Surface async Go runtime failures with their real text instead of a
+    // mystery "no bridge" message.
+    const asyncErrs = [];
+    const onRej = (e) => { asyncErrs.push(String((e && e.reason && e.reason.message) || (e && e.message) || e).slice(0, 200)); };
+    window.addEventListener('unhandledrejection', onRej);
+    try {
+      const cap = xm2capability();
+      if (!cap.ok) throw new Error(cap.reason);
+      if (typeof window.xm2 !== 'undefined') return window.xm2;
+      const v = xm2appV();
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        // Relative URL (+ version cache-buster): works under
+        // https://127.0.0.1, file-less Linux GUI, and Capacitor
+        // (capacitor://localhost) alike, and evicts runtimes cached from
+        // older releases. Absolute '/vendor/…' breaks on Android, so it is
+        // only a fallback in the fetch below.
+        s.src = `vendor/wasm_exec.js?v=${encodeURIComponent(v)}`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('v2 engine file missing (wasm_exec.js) — reinstall the app from the signed release, then retry.'));
+        document.head.append(s);
+      });
+      if (typeof Go === 'undefined') throw new Error('v2 engine starter missing — reinstall the app from the signed release, then retry.');
+      const go = new Go();
+      // Same-origin WASM bytes. Try document-relative first (Android-safe),
+      // then root-absolute (desktop server). Either may 404 on a broken bundle.
+      let bin = null, lastErr = null;
+      for (const url of [`vendor/xm2.wasm?v=${encodeURIComponent(v)}`, `/vendor/xm2.wasm?v=${encodeURIComponent(v)}`]) {
+        try {
+          const resp = await Promise.race([
+            fetch(url, { cache: 'no-store' }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 45000)),
+          ]);
+          if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+          bin = await resp.arrayBuffer();
+          break;
+        } catch (e) { lastErr = e; }
+      }
+      if (!bin) throw new Error(`v2 engine bytes unreachable (${(lastErr && lastErr.message) || 'fetch failed'}) — reinstall the app, then retry. XM1 transfers unaffected.`);
+      let mod;
+      try {
+        mod = await WebAssembly.instantiate(bin, go.importObject);
+      } catch (e) {
+        throw new Error(`v2 engine failed to start on this device (${e.message || 'WebAssembly error'}). Likely cause: old WebView or low memory — update Android System WebView and close other apps, then retry. XM1 QR transfers work fine without v2.`);
+      }
+      go.run(mod.instance || mod);
+      // Registration can lag run() on slow devices — poll briefly instead of
+      // failing on the first synchronous check.
+      const waitUntil = Date.now() + 10000;
+      while (typeof window.xm2 === 'undefined' && Date.now() < waitUntil) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (typeof window.xm2 === 'undefined') {
+        const extra = asyncErrs.length ? ` Engine said: ${asyncErrs[0]}` : '';
+        throw new Error(`v2 bridge failed to start (engine ran but exposed no bridge).${extra} Fix: reinstall the signed 1.3.1+ app (old cached engine files cause this), update Android System WebView, then retry. XM1 transfers unaffected.`);
+      }
+      // Self-test ping: prove the bridge answers before pairing step 1.
+      try {
+        const probe = JSON.parse(window.xm2.fingerprint(JSON.stringify({ a: 'AA', b: 'AQ' })));
+        if (probe.error || !/^[0-9a-f]{8}(-[0-9a-f]{8}){5}$/.test(probe.hex || '')) {
+          throw new Error('self-test answer malformed');
+        }
+      } catch (e) {
+        try { window.xm2 = undefined; } catch {}
+        throw new Error(`v2 bridge started but failed its self-test (${(e && e.message) || 'bad answer'}) — reinstall the signed app, then retry.`);
+      }
+      try { window._v2loadMs = Date.now() - t0; } catch {}
+      return window.xm2;
+    } catch (e) { note(e); throw e; }
+    finally { window.removeEventListener('unhandledrejection', onRej); }
+  })().catch(e => { xm2p = null; throw e; });
+  return xm2p;
+}
+// Pair status pill: Connected (green) vs Not connected (grey). Refreshed
+// whenever the pair view opens and after pairing/unpairing.
+function v2status() {
+  try {
+    const pill = document.getElementById('v2ConnPill');
+    if (pill) {
+      pill.textContent = v2paired ? '● Connected' : '○ Not connected';
+      pill.dataset.on = v2paired ? '1' : '';
+    }
+    const pane = document.getElementById('v2ConnPillPane');
+    if (pane) {
+      pane.textContent = v2paired ? '● Connected' : '○ Not connected';
+      pane.dataset.on = v2paired ? '1' : '';
+    }
+    const nav = document.querySelector('.thread[data-view="pair"] .thread-copy small');
+    if (nav) nav.textContent = v2paired ? 'Connected — post-quantum ready' : 'Post-quantum, face to face';
+  } catch {}
+}
+function v2unpair() {
+  const forget = [v2send, v2recv];
+  try { if (window._v2me && window._v2me.handle) forget.push(window._v2me.handle); } catch {}
+  v2send = null; v2recv = null; v2paired = false; v2fpText = '';
+  try { window._v2me = null; window._v2peer = null; window._v2ready = null; } catch {}
+  // Best-effort WASM forget (maps die with page reload anyway).
+  try {
+    for (const h of forget) {
+      if (!h) continue;
+      try { const p = xm2call('forget', { handle: h }); if (p && p.catch) p.catch(() => {}); } catch {}
+    }
+  } catch {}
+  try {
+    const items = profiles();
+    const mate = items.find(p => p.id === 'v2-paired');
+    if (mate) { mate.v2 = false; mate.note = 'Session ended — pair again for XM2'; saveProfiles(items); }
+    renderProfiles();
+  } catch {}
+  v2banner(false); v2status();
+  try { if (currentView === 'pair') renderChat(); } catch {}
+}
+// XM2 seals belong ONLY to the paired contact's thread. Everything else —
+// general notes, other users — always uses the XM1 phrase flow.
+function v2threadActive() {
+  try {
+    const mate = profiles().find(p => p.id === 'v2-paired');
+    return !!(v2paired && v2send && mate && mate.v2 && threadFor === mate.id);
+  } catch { return false; }
+}
+async function xm2call(name, obj) {
+  const bridge = await xm2load();
+  const raw = bridge[name](JSON.stringify(obj || {}));
+  const out = JSON.parse(raw);
+  if (out && out.error) throw new Error(out.error);
+  return out;
+}
+function v2banner(show) {
+  try {
+    let bar = document.getElementById('v2Banner');
+    if (show && !bar) {
+      bar = document.createElement('div');
+      bar.id = 'v2Banner'; bar.className = 'security-ribbon';
+      bar.textContent = '◆ v2 experimental crypto (P-384 + ML-KEM-1024) — unaudited. High-risk use waits for the audit.';
+      document.querySelector('.conversation').prepend(bar);
+    } else if (!show && bar) bar.remove();
+  } catch {}
+}
+// v2 engine crash flag: after the page engine dies on the experimental v2
+// call (proven on some system WebKit builds: WEBKIT_WEB_PROCESS_CRASHED),
+// the native shell reloads with ?v2crashed=1. Remember it on this device and
+// stand v2 down with an honest notice instead of crashing again. Ordinary
+// XM1 transfers never touch the v2 engine. Retry is explicit and informed.
+const V2BROKEN_KEY = 'x-messenger-v2-broken';
+let v2broken = false;
+try {
+  if (new URLSearchParams(location.search).get('v2crashed') === '1') {
+    try { localStorage.setItem(V2BROKEN_KEY, '1'); } catch {}
+  }
+  v2broken = localStorage.getItem(V2BROKEN_KEY) === '1';
+} catch {}
+function v2retry() { try { localStorage.removeItem(V2BROKEN_KEY); } catch {} v2broken = false; try { location.href = location.pathname; } catch {} }
+function v2standDown(box) {
+  if (!v2broken) return false;
+  try {
+    if (document.getElementById('v2BrokenNotice')) return true;
+    const n = document.createElement('div');
+    n.className = 'security-ribbon'; n.id = 'v2BrokenNotice';
+    n.textContent = '◆ v2 pairing is off on this system browser: its page engine stops when the experimental v2 engine runs. Ordinary sealed transfers (XM1) work fully. ';
+    const btn = document.createElement('button');
+    btn.className = 'ghost-button'; btn.textContent = 'Try v2 again'; btn.onclick = v2retry;
+    n.append(btn);
+    box.prepend(n);
+  } catch {}
+  return true;
+}
+// Pairing ceremony (spec §2): two QR scans + out-loud fingerprint.
+// Helpers: b64url decode to bytes for canonical ordering.
+function _b64d(s) {
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+function _b64e(bytes) {
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function _cmp(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+}
+async function v2pair() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    say('Step 1/4 — generating your hybrid identity…');
+    const me = await xm2call('generateIdentity', {});
+    const half = new Uint8Array(16);
+    crypto.getRandomValues(half);
+    window._v2me = { handle: me.handle, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: _b64e(half) };
+    const code = JSON.stringify({ v: 2, ecdh: me.ecdhPub, mlkem: me.mlkemPub, half: window._v2me.half });
+    const st = await qrShowPayload($('#v2MyQr'), code, { width: 220, ec: 'M' });
+    try { document.getElementById('v2MyCodeText').value = code; } catch {}
+    // v2 codes are ~2.3kB (P-384 97B + ML-KEM-1024 1568B + half): shown as
+    // 2 QR parts when needed. Copy + paste stays available as fallback.
+    if (st.parts.length > 1) say(`Step 1/4 — code shown in ${st.parts.length} parts: scan every part with the other device, or copy the text below. Then paste THEIR code and continue.`);
+    else say('Step 1/4 — let them scan this code, or copy the text below to their device. Then paste THEIR code and continue.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairContinue() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    const peer = JSON.parse($('#v2PeerCode').value.trim());
+    if (!peer.ecdh || !peer.mlkem || !peer.half) throw new Error('That is not an X Messenger v2 code.');
+    const me = window._v2me;
+    if (!me) throw new Error('Generate your code first (step 1).');
+    say('Step 2/4 — encapsulating to their key…');
+    const enc = await xm2call('encaps', { handle: me.handle, peerMkem: peer.mlkem });
+    // Canonical lo/hi: byte-lexicographic over raw identity (ecdh||mlkem),
+    // mirrors Go bytes.Compare in OrderFP. Both sides agree.
+    const myId = (() => { const a = _b64d(me.ecdh), b = _b64d(me.mlkem), o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; })();
+    const peerId = (() => { const a = _b64d(peer.ecdh), b = _b64d(peer.mlkem), o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; })();
+    const iAmLo = _cmp(myId, peerId) <= 0;
+    // Meeting secret S32: halves are 16B each (128-bit). Go RootKey needs
+    // 32B S = (sA^sB)||(sA^sB) — same construction as handshake_test.go.
+    // v1.4.0 sent 16B here -> every pairing failed at deriveRoot with
+    // "core: bad handshake input length". Fixed in v1.4.1.
+    const a = _b64d(me.half), b = _b64d(peer.half);
+    if (a.length !== 16 || b.length !== 16) throw new Error('That is not an X Messenger v2 code (bad half length).');
+    const sBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) sBytes[i] = a[i % 16] ^ b[i % 16];
+    // Canonical transcript: ordered pubs + S + my ct (theirs arrives next).
+    const loE = iAmLo ? me.ecdh : peer.ecdh, hiE = iAmLo ? peer.ecdh : me.ecdh;
+    const loM = iAmLo ? me.mlkem : peer.mlkem, hiM = iAmLo ? peer.mlkem : me.mlkem;
+    window._v2peer = { ecdh: peer.ecdh, mlkem: peer.mlkem, half: peer.half, iAmLo, sBytes, loE, hiE, loM, hiM, kMe: enc.k, ctMe: enc.ct };
+    const myCt = JSON.stringify({ v: 2, ct: enc.ct });
+    const ctState = await qrShowPayload($('#v2MyCtQr'), myCt, { width: 220, ec: 'M' });
+    try { document.getElementById('v2MyCtText').value = myCt; } catch {}
+    say(ctState.parts.length > 1
+      ? `Step 2/4 — ciphertext shown in ${ctState.parts.length} parts: scan every part, or copy the text below. Then paste THEIR ciphertext and continue.`
+      : 'Step 2/4 — let them scan YOUR ciphertext code, or copy the text below. Then paste THEIR ciphertext and continue.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairFp() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    const me = window._v2me, peer = window._v2peer;
+    if (!me || !peer) throw new Error('Complete steps 1–2 first.');
+    const ctPeer = JSON.parse($('#v2PeerCt').value.trim());
+    if (!ctPeer.ct) throw new Error('That is not a v2 ciphertext code.');
+    say('Step 3/4 — decapsulating + fingerprinting full transcript…');
+    const kPeer = await xm2call('decaps', { handle: me.handle, ct: ctPeer.ct });
+    const kLo = peer.iAmLo ? peer.kMe : kPeer.k;
+    const kHi = peer.iAmLo ? kPeer.k : peer.kMe;
+    // Fingerprint transcript per spec §2.4 (ordered, no sorting):
+    // A_lo||A_hi||MK_lo||MK_hi||S32||ct_lo||ct_hi, where ct_lo is the lo
+    // side's ciphertext. v1.4.0 sorted blobs lexicographically -> cross-impl
+    // mismatch. Fixed in v1.4.1.
+    const ctLo = peer.iAmLo ? peer.ctMe : ctPeer.ct;
+    const ctHi = peer.iAmLo ? ctPeer.ct : peer.ctMe;
+    const parts = [peer.loE, peer.hiE, peer.loM, peer.hiM, _b64e(peer.sBytes), ctLo, ctHi];
+    const blobs = parts.map(p => _b64d(p));
+    const total = blobs.reduce((n, b) => n + b.length, 0);
+    const cat = new Uint8Array(total);
+    let o = 0;
+    for (const b of blobs) { cat.set(b, o); o += b.length; }
+    const fp = await xm2call('fingerprint', { a: _b64e(cat.slice(0, Math.ceil(cat.length / 2))), b: _b64e(cat.slice(Math.ceil(cat.length / 2))) });
+    $('#v2Fingerprint').textContent = fp.hex.replace(/(.{8})/g, '$1 ').trim();
+    try { v2fpText = document.getElementById('v2Fingerprint').textContent; } catch {}
+    window._v2ready = { kLo, kHi, ctMe: peer.ctMe, ctPeer: ctPeer.ct };
+    say('Step 3/4 done. Compare the fingerprint OUT LOUD, tick confirm, then finish.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+async function v2pairFinish() {
+  const say = t => { $('#v2PairStatus').textContent = t; };
+  try {
+    if (!$('#v2Confirm').checked) { say('Tick confirm only after comparing out loud.'); return; }
+    const me = window._v2me, peer = window._v2peer, ready = window._v2ready;
+    if (!me || !peer || !ready) throw new Error('Complete steps 1–3 first.');
+    say('Step 4/4 — deriving root chains + ECDH…');
+    const kEcdh = await xm2call('ecdh', { handle: me.handle, peerEcdh: peer.ecdh });
+    const root = await xm2call('deriveRoot', {
+      ecdhLo: peer.loE, ecdhHi: peer.hiE, mkLo: peer.loM, mkHi: peer.hiM,
+      kEcdh: kEcdh.k, kLo: ready.kLo, kHi: ready.kHi, meeting: _b64e(peer.sBytes),
+    });
+    const iAmLo = peer.iAmLo;
+    const send = await xm2call('sender', { chain: iAmLo ? root.chainLoHi : root.chainHiLo, epoch: 0, dir: iAmLo ? 'lo-hi' : 'hi-lo', counter: 0 });
+    const recv = await xm2call('receiver', { chain: iAmLo ? root.chainHiLo : root.chainLoHi, epoch: 0, dir: iAmLo ? 'hi-lo' : 'lo-hi' });
+    v2send = send.handle; v2recv = recv.handle; v2paired = true;
+    v2banner(true); v2status();
+    // The paired contact becomes a real user with its own thread: Users,
+    // Saved-thread, Receive and Settings all work scoped to it.
+    try {
+      const items = profiles();
+      let mate = items.find(p => p.id === 'v2-paired');
+      const tag = (v2fpText || '').replace(/\s+/g, ' ').trim().slice(0, 23);
+      if (mate) {
+        mate.name = 'Paired v2 contact'; mate.note = `Post-quantum session${tag ? ` · ${tag}…` : ''}`; mate.v2 = true;
+      } else if (items.length < 100) {
+        mate = { id: 'v2-paired', name: 'Paired v2 contact', note: `Post-quantum session${tag ? ` · ${tag}…` : ''}`, v2: true };
+        items.push(mate);
+      }
+      if (mate) saveProfiles(items);
+      renderProfiles();
+    } catch {}
+    say('Paired ✓ — open Users → Paired v2 contact for its own thread. Old XM1 messages still open.');
+  } catch (e) { say(`Pairing failed: ${e.message}`); }
+}
+// v2 pairing dialog (spec §2 ceremony): 4 guided steps.
+function buildPairDialog() {
+  if (document.getElementById('pairDialog')) return;
+  const d = document.createElement('dialog');
+  d.className = 'modal'; d.id = 'pairDialog';
+  d.innerHTML = '<button class="modal-close" data-close>×</button><div class="modal-content">'
+    + '<div class="modal-kicker">V2 PAIRING — FACE TO FACE ONLY</div>'
+    + '<div class="conn-pill" id="v2ConnPill" data-on="">○ Not connected</div>'
+    + '<h2>Pair a post-quantum contact</h2>'
+    + '<p>Both phones generate hybrid keys, swap codes by camera <b>or copied text</b>, and compare the fingerprint out loud. Experimental crypto — unaudited.</p>'
+    + '<div class="qr-wrap"><canvas id="v2MyQr"></canvas></div>'
+    + '<label>My code — copy it to the other device<textarea id="v2MyCodeText" rows="2" readonly placeholder="Press 1 · Generate my code first"></textarea></label>'
+    + '<button class="ghost-button" id="v2CopyMyCode">Copy my code</button>'
+    + '<button class="primary-large" id="v2Step1">1 · Generate my code <span>→</span></button>'
+    + '<label>Their code<textarea id="v2PeerCode" rows="2" placeholder="Paste the code they show (or scan it)"></textarea></label>'
+    + '<button class="primary-large" id="v2Step2">2 · Encapsulate <span>→</span></button>'
+    + '<div class="qr-wrap"><canvas id="v2MyCtQr"></canvas></div>'
+    + '<label>My ciphertext — copy it to the other device<textarea id="v2MyCtText" rows="2" readonly placeholder="Press 2 · Encapsulate first"></textarea></label>'
+    + '<button class="ghost-button" id="v2CopyMyCt">Copy my ciphertext</button>'
+    + '<label>Their ciphertext<textarea id="v2PeerCt" rows="2" placeholder="Paste their ciphertext code (or scan it)"></textarea></label>'
+    + '<div class="fingerprint"><div class="label-row"><span>SAFETY FINGERPRINT — READ OUT LOUD</span></div><code id="v2Fingerprint">—</code></div>'
+    + '<button class="primary-large" id="v2Step3">3 · Compare fingerprint <span>→</span></button>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input id="v2Confirm" type="checkbox" style="width:auto"> We read the SAME fingerprint out loud</label>'
+    + '<button class="primary-large" id="v2Step4">4 · Finish pairing <span>→</span></button>'
+    + '<button class="ghost-button" id="v2Unpair">Unpair this contact</button>'
+    + '<button class="ghost-button" id="v2Diag">Copy diagnostics</button>'
+    + '<p id="v2PairStatus" class="receive-status"></p></div>';
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick = () => d.close();
+  v2status();
+  if (v2broken) {
+    try {
+      const mc = d.querySelector('.modal-content');
+      const n = document.createElement('p');
+      n.className = 'subtle'; n.id = 'v2BrokenDialog';
+      n.textContent = 'v2 engine is off on this system browser (page engine stops). Ordinary sealed transfers work. ';
+      const rb = document.createElement('button');
+      rb.className = 'ghost-button'; rb.textContent = 'Try v2 again'; rb.onclick = v2retry;
+      n.append(rb);
+      mc.prepend(n);
+      ['v2Step1', 'v2Step2', 'v2Step3', 'v2Step4'].forEach(id => { const b = d.querySelector('#' + id); if (b) { b.disabled = true; b.title = 'v2 engine is off on this system browser'; } });
+    } catch {}
+  }
+  d.querySelector('#v2Step1').onclick = v2pair;
+  d.querySelector('#v2Step2').onclick = v2pairContinue;
+  d.querySelector('#v2Step3').onclick = v2pairFp;
+  d.querySelector('#v2Step4').onclick = v2pairFinish;
+  const copyCode = async (id, what) => {
+    const s = d.querySelector('#v2PairStatus');
+    try {
+      const t = document.getElementById(id).value;
+      if (!t) throw new Error('empty');
+      await navigator.clipboard.writeText(t);
+      clearClipboardLater();
+      if (s) s.textContent = `${what} copied (clears in 30s). Carry it to the other device and paste it there.`;
+    } catch { if (s) s.textContent = `Nothing to copy yet — generate first.`; }
+  };
+  d.querySelector('#v2CopyMyCode').onclick = () => copyCode('v2MyCodeText', 'My code');
+  d.querySelector('#v2CopyMyCt').onclick = () => copyCode('v2MyCtText', 'My ciphertext');
+  d.querySelector('#v2Unpair').onclick = () => { v2unpair(); const s = d.querySelector('#v2PairStatus'); if (s) s.textContent = 'Unpaired on this device. Pair again to seal with XM2.'; };
+  d.querySelector('#v2Diag').onclick = async () => {
+    const s = d.querySelector('#v2PairStatus');
+    try {
+      const txt = JSON.stringify(xm2diag());
+      await navigator.clipboard.writeText(txt);
+      clearClipboardLater();
+      if (s) s.textContent = 'Diagnostics copied (no secrets inside) — clears in 30s. Send it to support with your app version.';
+    } catch { if (s) s.textContent = 'Could not access clipboard on this device.'; }
+  };
+}
+// Launch: land straight in the messenger. A locked vault opens its lock
+// screen; otherwise history starts empty and seals itself once set up.
+try {
+  if (localStorage.getItem(VAULT_KEY)) {
+    vaultMode = 'locked';
+    renderChat();
+    setTimeout(() => { try { openVaultDialog('unlock'); } catch {} }, 350);
+  } else {
+    renderChat();
+  }
+} catch {}
