@@ -7,10 +7,10 @@ android {
         applicationId "com.jackh0006.xmessenger"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // v1.5.2: base 20. Play multi-APK offsets are applied in splits
+        // v1.5.3: base 21. Play multi-APK offsets are applied in splits
         // (arm64/x86_64 higher than arm32/x86) so old arm32 devices stay installable.
-        versionCode 20
-        versionName "1.5.2"
+        versionCode 21
+        versionName "1.5.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // arm32 (armeabi-v7a) for Android 9-era phones + arm64 for new;

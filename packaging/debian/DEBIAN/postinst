@@ -1,0 +1,24 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# postinst for x-messenger
+
+set -e
+
+# Install desktop entry
+if [ -f /usr/share/applications/x-messenger.desktop ]; then
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+fi
+
+# Create symlinks if they don't exist
+if [ ! -f /usr/bin/x-messenger ]; then
+    ln -s /usr/lib/x-messenger/bin/cipherlink /usr/bin/x-messenger 2>/dev/null || true
+fi
+
+if [ ! -f /usr/bin/x-messenger-cli ]; then
+    ln -s /usr/lib/x-messenger/bin/cipherlink /usr/bin/x-messenger-cli 2>/dev/null || true
+fi
+
+echo "X Messenger installed. Run 'x-messenger gui' to start."
+echo "Run 'x-messenger gui --help' for options."
+
+exit 0
