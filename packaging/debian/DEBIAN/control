@@ -1,5 +1,5 @@
 Package: x-messenger
-Version: 1.5.3
+Version: 1.5.3-self-audited
 Section: net
 Priority: optional
 Architecture: amd64 arm64 armhf

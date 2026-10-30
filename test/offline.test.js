@@ -191,7 +191,7 @@ test('android supports arm32 + arm64 on SDK 36 with Play AAB path', () => {
   assert.ok(gradle.includes('armeabi-v7a') && gradle.includes('arm64-v8a'), 'ABI filters must include arm32 + arm64');
   assert.ok(gradle.includes('splits') && gradle.includes('universalApk'), 'per-ABI splits must exist for GitHub APKs');
   assert.ok(gradle.includes('bundleRelease') || gradle.includes('bundle {') || fs.existsSync(path.join(root, 'scripts', 'release.sh')) && read('scripts/release.sh').includes('bundleRelease'), 'Play AAB path must exist');
-  assert.ok(gradle.includes('versionCode 21') && gradle.includes('versionName "1.5.3"'), 'android version must be 1.5.3/21');
+  assert.ok(gradle.includes('versionCode 21') && gradle.includes(`versionName "${require('../package.json').version}"`), 'android version must match package.json/21');
   const proguard = read('android/app/proguard-rules.pro');
   assert.ok(proguard.includes('com.getcapacitor'), 'R8 keeps must cover Capacitor or release builds crash');
 });

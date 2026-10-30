@@ -10,4 +10,4 @@ Terminal=false
 Categories=Network;InstantMessaging;
 Keywords=qr;encrypt;offline;messenger;
 StartupNotify=true
-StartupWMClass=X-Messenger
+StartupWMClass=x-messenger

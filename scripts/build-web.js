@@ -16,6 +16,14 @@ const assets = [
   ['node_modules/jsqr/dist/jsQR.js', 'vendor/jsQR.js'],
 ];
 
+// Refuse to build if any shipped JavaScript has a syntax error. A single
+// broken line here would make the whole UI inert (no click handlers, stuck
+// "Generating ID..." screen), so fail the build before copying anything.
+for (const [source] of assets) {
+  if (!source.endsWith('.js')) continue;
+  execFileSync(process.execPath, ['--check', path.join(root, source)], { stdio: 'inherit' });
+}
+
 fs.rmSync(output, { recursive: true, force: true });
 for (const [source, destination] of assets) {
   const from = path.join(root, source);

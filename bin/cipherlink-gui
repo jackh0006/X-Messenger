@@ -452,6 +452,14 @@ def main():
     if not profile:
         base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
         profile = os.path.join(base, "x-messenger", "webkit-profile")
+    # Match the installed desktop entry so the window and launcher use the
+    # same theme icon (SVG installed by scripts/build-deb.sh).
+    try:
+        GLib.set_prgname("x-messenger")
+        GLib.set_application_name("X Messenger")
+        Gtk.Window.set_default_icon_name("x-messenger")
+    except Exception:
+        pass
     app = Adw.Application(application_id="com.jackh0006.xmessenger", flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
 
     def on_activate(a):

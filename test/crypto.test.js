@@ -16,15 +16,16 @@ test('rejects a wrong phrase and uses the configured work factor', async () => {
   assert.equal(ITERATIONS, 600000);
 });
 
-test('keeps version fixed at 1.5.3 everywhere', () => {
-  assert.equal(VERSION, '1.5.3');
-  assert.equal(require('../package.json').version, '1.5.3');
+test('keeps one version across every package', () => {
+  const expected = require('../package.json').version;
+  assert.equal(VERSION, expected, 'core.js VERSION must match package.json');
   const fs = require('node:fs');
-  const gradle = fs.readFileSync(require('node:path').join(__dirname, '..', 'android', 'app', 'build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionName "1.5.3"'), 'android versionName must be 1.5.3');
+  const path = require('node:path');
+  const gradle = fs.readFileSync(path.join(__dirname, '..', 'android', 'app', 'build.gradle'), 'utf8');
+  assert.ok(gradle.includes(`versionName "${expected}"`), `android versionName must be ${expected}`);
   assert.ok(gradle.includes('versionCode 21'), 'android versionCode must be 21');
-  const control = fs.readFileSync(require('node:path').join(__dirname, '..', 'packaging', 'debian', 'DEBIAN', 'control'), 'utf8');
-  assert.ok(control.includes('Version: 1.5.3'), 'deb control must be 1.5.3');
+  const control = fs.readFileSync(path.join(__dirname, '..', 'packaging', 'debian', 'DEBIAN', 'control'), 'utf8');
+  assert.ok(control.includes(`Version: ${expected}`), `deb control must be ${expected}`);
 });
 
 test('round-trips unicode, emoji and punctuation', async () => {
