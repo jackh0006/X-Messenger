@@ -1,6 +1,6 @@
-# X-Messenger Threat Model (v1.5.2)
+# X-Messenger Threat Model (v1.5.3-self-audited)
 
-**Status:** Maintained. This documents the assets, adversaries, attack surfaces, trust assumptions, and residual risks for X-Messenger v1.5.2.
+**Status:** Maintained. This documents the assets, adversaries, attack surfaces, trust assumptions, and residual risks for X-Messenger v1.5.3-self-audited.
 
 **Honesty constraint:** Encryption cannot reliably protect plaintext while a device is compromised, unlocked, or when the attacker can access the app or its memory. This document does not claim protection against traffic analysis. No claim of anonymity, invisibility to an ISP, or resistance to every attacker is made.
 

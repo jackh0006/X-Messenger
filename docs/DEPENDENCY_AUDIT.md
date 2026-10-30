@@ -1,4 +1,4 @@
-# X-Messenger Dependency Audit (v1.5.2)
+# X-Messenger Dependency Audit (v1.5.3-self-audited; dependency set unchanged)
 
 **Status:** Maintained. This documents every security-critical dependency per the cryptographic dependency policy.
 
