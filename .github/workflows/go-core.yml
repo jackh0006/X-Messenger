@@ -14,6 +14,7 @@ on:
       - 'model/**'
       - 'docs/PROTOCOL-v2.md'
       - '.github/workflows/go-core.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
