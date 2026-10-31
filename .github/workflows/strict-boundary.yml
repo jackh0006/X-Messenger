@@ -51,7 +51,9 @@ jobs:
           grep -q "VERSION = '$VER'" core.js
           grep -q "versionName \"$VER\"" android/app/build.gradle
           grep -q "Version: $VER" packaging/debian/DEBIAN/control
-          grep -q "version: '$VER'" server.js
+          # server.js reads the version dynamically from package.json
+          # (no hardcoded string) — gate the dynamic path like release.sh does.
+          grep -q "appVersion\|package.json" server.js
           grep -q "\"version\": \"$VER\"" package-lock.json
           grep -rq '1\.0\.2' README.md SECURITY.md PRIVACY.md CONTRIBUTING.md PUBLISHING.md PLAY_RELEASE.md docs/ .github/ISSUE_TEMPLATE/ 2>/dev/null && { echo "stale 1.0.2 reference"; exit 1; }
           echo "versions: lockstep OK ($VER)"

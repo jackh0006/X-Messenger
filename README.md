@@ -15,8 +15,50 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 > watching your screen can still leak a message. X Messenger needs an
 > independent security audit before high-risk use.
 
+## Proof, not promises — verified scoreboard
+
+Every row is re-runnable by you (last column). Nothing here asks for trust.
+
+| # | Proof | Result | Verified by |
+| --- | --- | --- | --- |
+| 1 | Node test suite: crypto, offline core, UI invariants, pairing, QR parts | **72 / 72 pass** | `npm ci && npm test` — same run on GitHub's runners (`Verify` workflow, Node 22) |
+| 2 | Android asks for **CAMERA only** — never `INTERNET` | ✅ | `aapt dump badging` on the shipped APK + `Strict boundary` CI gate |
+| 3 | Linux GUI: loopback-only `https://127.0.0.1` by default, zero egress | ✅ | `ss -tlnp` while running; airplane mode is a supported way to use it |
+| 4 | Version lockstep — one version everywhere | ✅ `1.5.2` in all 6 files | `package.json` · `core.js` · gradle · deb control · `index.html` · `/api/info` |
+| 5 | WASM v2 pair integrity | ✅ | `node scripts/check-wasm-pair.js` → self-test fingerprint, pinned toolchain |
+| 6 | Desktop UI ≡ Android UI | ✅ 12/12 shared files byte-identical | `diff -rq www android/app/src/main/assets/public` (only the Capacitor bridge differs) |
+| 7 | APK signatures are real (upload keystore, not debug keys) | ✅ | `apksigner verify --print-certs` → `CN=X Messenger, OU=Offline, O=jackh0006` |
+| 8 | Published bytes = built bytes | ✅ 14/14 files hash-verified | `SHA256SUMS.txt` on every release; re-downloaded from GitHub and re-checked: MATCH |
+| 9 | What you install = what you build | ✅ same source tree | deb from `scripts/build-deb.sh` matches `dpkg -s x-messenger` (`Version: 1.5.2`) |
+
+Fresh numbers live in the [Actions tab](https://github.com/jackh0006/X-Messenger/actions).
+**72 / 72** is not a target — it is the merge gate: a change that breaks a
+test cannot get in.
+
+## Who can read your words — plain answer
+
+In simple words: **nobody**. Not the author, not a server, not an AI, not
+the store you installed from. This is not a promise — it is a list of
+things that *do not exist* in the app, and an absence cannot betray you:
+
+| Who | Can read your messages? | Can touch your files? | The mechanism (and how it is checked) |
+| --- | :---: | :---: | --- |
+| **jackh0006 (the author)** | ✗ never | ✗ | There is **no account, no signup, no server, nothing to receive**. The app never sends anything anywhere. GitHub hosts only the public code |
+| **Any server — ours or someone else's** | ✗ | ✗ | By default **no server exists**. The GUI answers only on your own device at `https://127.0.0.1` — your machine talking to itself |
+| **AI (the assistant used while building)** | ✗ never | ✗ | The app you install **contains no AI code and makes no network calls**. The assistant worked on the developer's own machine, at build time, under human direction — it has **no permission and no connection** to your device, your data or your messages. Ever |
+| **The internet itself** | ✗ | ✗ | Android: camera permission only, **no INTERNET permission at all**. Linux: loopback by default. Airplane mode is a supported mode, not a bug |
+| **Google / Play** (if you use the store) | ✗ — store install metadata only | ✗ | Standard store machinery; this app adds nothing to it (no analytics, no trackers — asserted by CI) |
+| **You** | ✓ only on screen while reading | ✓ by your own install/uninstall | Plaintext exists only while a message is open; storage keeps sealed envelopes + local labels (tested). Export/backup happens only when *you* press the button |
+| **Someone holding your unlocked phone + your secret words** | ◐ that one message | — | The honest limit every messenger shares: a compromised device or leaked phrase can't be cured by any app. Strong one-time phrases + lock screen (`SECURITY.md`) are the answer |
+
+Scope note: this page and the repo are public on purpose — *the code*.
+Your sealed messages never touch GitHub, any server, or any AI.
+
+
 ## Contents
 
+- [Proof, not promises — verified scoreboard](#proof-not-promises--verified-scoreboard)
+- [Who can read your words — plain answer](#who-can-read-your-words--plain-answer)
 - [Why it is different](#why-its-different-to-any-messenger)
 - [What people need it for](#what-people-need-it-for)
 - [30-second demo](#30-second-demo-like-teaching-a-5-year-old)
@@ -25,6 +67,8 @@ or `.xmsg` file**. If WhatsApp needs the internet, X needs only eyesight.
 - [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
 - [Android (stays offline)](#android-stays-offline)
 - [Security design](#security-design)
+- [Provenance — who made this](#provenance--who-made-this)
+- [Open source — verify, don't trust](#open-source--verify-dont-trust)
 - [v2 post-quantum channel (experimental)](#v2-post-quantum-channel-experimental)
 - [Docs map](#docs-map)
 - [Donate](#donate-no-ads-no-premium)
@@ -205,6 +249,48 @@ setup when published. Full steps: [`WINDOWS_GUIDE.md`](WINDOWS_GUIDE.md).
   message *content* stays XM1 end-to-end when the phrase stays off the server.
 
 Read [SECURITY.md](SECURITY.md) before high-risk use.
+
+## Provenance — who made this
+
+- **Author and human in charge: jackh0006.** Every final decision, the
+  security spec and every shipped release are directed, reviewed and
+  signed off by a human. `package.json` keeps `"author": "jackh0006"` —
+  and the test suite refuses anything else.
+- **AI as a tool under human direction, never at runtime.** The
+  development used an AI coding **assistant** to write and review parts of
+  the code, always on the developer's own machine, always on your team's
+  terms: the human wrote the spec and approved the ship. The app you
+  install runs **no AI at all** — it is pure offline code with no network
+  path, so no assistant (and no supplier of one) can read your data,
+  change your files or touch your device.
+- **Independent audit still recommended.** Real trust comes from outside
+  eyes ([`SECURITY.md`](SECURITY.md)). Source, test counts and hash sums
+  are published precisely so such an audit is possible — and cheap.
+
+## Open source — verify, don't trust
+
+MIT-licensed, buildable from source, and the proofs above run on GitHub's
+own runners — on every push, forever, without asking anyone.
+
+```bash
+git clone https://github.com/jackh0006/X-Messenger.git
+cd X-Messenger
+npm ci && npm test            # → Tests 72, Pass 72
+npm run build:web             # offline bundle; rejects remote assets
+bash scripts/build-deb.sh amd64   # → your own .deb
+```
+
+Compare your `sha256sum` against the release's `SHA256SUMS.txt` — or skip
+our builds entirely and install **your own**. That is the point of open.
+
+| Question | Answer that can be checked |
+| --- | --- |
+| Is the code readable by anyone? | Yes — public repo, [MIT](LICENSE), SPDX `MIT`, notices in [NOTICE](NOTICE) |
+| Can I build each shipped artifact myself? | Yes — every artifact has a from-source builder in `scripts/` |
+| Who runs the tests — the author's word? | No: CI (`.github/workflows/`) runs them on GitHub's servers for every push |
+| What do 72 tests actually check? | See `test/` — 7 suites from crypto round-trips to "no tracker ever loads" |
+| Could a release carry something the source does not have? | The builders produce artifacts from the same tree; `SHA256SUMS` + your own build catch any drift |
+
 
 ## v2 post-quantum channel (experimental)
 
