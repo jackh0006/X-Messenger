@@ -49,6 +49,21 @@ test cannot get in.
 | `test/messages.test.js` — message handling | 4 | delete, backup addressing, view-once |
 | **Total** | **72** | run as one gate on GitHub's runners + docs |
 
+**From each suite to its promise:**
+
+| Suite | The headline promise its tests prove |
+| --- | --- |
+| crypto (13) | *only a mind holding your words opens the note; tampering fails loudly* |
+| offline (24) | *the core truly has no phone line — nothing to leak through it* |
+| ui-invariants (10) | *every button you see does what it says, in theme, on small screens* |
+| desktop (8) | *the deb/EXE ships exactly the tested story — authored by jackh0006 alone* |
+| pair (7) | *the v2 keys, fingerprints and ordering match the spec, face to face* |
+| qrparts (6) | *long notes ride many squares in the right order — or nothing opens* |
+| messages (4) | *deletes, backups and view-once behave for humans, not just for files* |
+
+**Every one of the 72 tests mapped to the property it locks and its
+plain-world meaning: [`docs/TEST-PROOF-MAP.md`](docs/TEST-PROOF-MAP.md)**.
+
 The **six automated CI gates** (`.github/workflows/strict-boundary.yml`):
 ① no network APIs in the bundle · ② Android stays CAMERA-only · ③ no
 certificate bypasses · ④ no unverifiable claims · ⑤ version lockstep ·
@@ -101,6 +116,7 @@ Four steps turn "trust me" into "watch me — then watch yourself."
 ## Contents
 
 - [Proof, not promises — verified scoreboard](#proof-not-promises--verified-scoreboard)
+- [Nothing left out — where every test lives](#nothing-left-out--where-every-test-lives)
 - [Who can read your words — plain answer](#who-can-read-your-words--plain-answer)
 - [Human-tested by the author — repeat it yourself](#human-tested-by-the-author--repeat-it-yourself-in-10-minutes)
 - [Why it is different](#why-its-different-to-any-messenger)
@@ -391,6 +407,7 @@ same audited Go core as the terminal demo, running in-page as WebAssembly.
 
 | File | What it teaches (5yo-simple where it matters) |
 | --- | --- |
+| `docs/TEST-PROOF-MAP.md` | Every one of the 72 tests → the property it locks → its meaning in the world |
 | `docs/ENCRYPTION-PLAIN.md` | The lockers explained in plain words: what each cipher is, open-source status, best-for / not-for, proof senses |
 | `docs/VERIFICATION-LOG.md` | The maintainer's dated two-device test session — builds, hashes, flows, honest scope |
 | `docs/GATEWAY.md` | Offline core vs optional gateway: loopback default, LAN IP / VPS domain / VPS IP with custom ports |
