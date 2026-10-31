@@ -66,6 +66,7 @@ Your sealed messages never touch GitHub, any server, or any AI.
 - [Use it](#use-it)
 - [Linux GUI modes: device, LAN, VPS](#linux-gui-modes-device-lan-vps)
 - [Android (stays offline)](#android-stays-offline)
+- [Windows (portable, no admin, real exe)](#windows-portable-no-admin-real-exe)
 - [Security design](#security-design)
 - [Provenance — who made this](#provenance--who-made-this)
 - [Open source — verify, don't trust](#open-source--verify-dont-trust)
