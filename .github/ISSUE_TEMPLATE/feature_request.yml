@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement for the offline courier — prefer changes the offline boundary survives
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: ask
+    attributes:
+      label: What should work better?
+      description: Feature idea, wording improvement, or platform support — all welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: offline
+    attributes:
+      label: Why does the no-internet boundary survive this? (fine to say "offline-only use")

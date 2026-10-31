@@ -1,0 +1,65 @@
+name: Device report (I tried it!)
+description: Tell the author how X Messenger behaved on YOUR real device — every report becomes recorded evidence
+title: "[Device report] <platform> — <one-line outcome>"
+labels: ["device-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! This is the strongest evidence the project can collect:
+        one person, one device, one honest session. No model names needed —
+        the artifact hash matters more than the brand.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Android - arm64, Android - arm32, Linux - deb / portable, Windows - portable ZIP, Windows - setup.exe]
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device class (generic keeps everyone safe)
+      description: e.g. "mid-range arm64 phone (~2018+)". Exact model optional.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS version family
+      options: [Android 9-11, Android 12-16, Ubuntu 22.04, Ubuntu 24.04, other Linux, Windows 10, Windows 11]
+    validations:
+      required: true
+  - type: input
+    id: artifact
+    attributes:
+      label: Artifact + first 12 chars of SHA-256
+      description: e.g. "X-Messenger-1.5.2-Android-arm64.apk — e866f4ebb440" (from the release's SHA256SUMS.txt)
+    validations:
+      required: true
+  - type: checkboxes
+    id: flows
+    attributes:
+      label: Which flows did you try? (tick all you tested)
+      options:
+        - label: Seal → show QR
+        - label: Scan QR → decrypt
+        - label: `.xmsg` file hand-off
+        - label: Multi-part (long) QR receive
+        - label: Vault lock / export
+        - label: Pair-v2 with fingerprint spoken aloud
+        - label: Settings, themes, text size
+        - label: Airplane mode end-to-end
+        - label: Desktop launcher / app-window
+        - label: CLI seal → decrypt roundtrip
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options: [Everything worked, Mostly worked (see notes), Some things failed, Could not install]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (what happened above — no real messages or phrases, ever)

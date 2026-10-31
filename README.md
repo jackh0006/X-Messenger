@@ -30,10 +30,31 @@ Every row is re-runnable by you (last column). Nothing here asks for trust.
 | 7 | APK signatures are real (upload keystore, not debug keys) | ✅ | `apksigner verify --print-certs` → `CN=X Messenger, OU=Offline, O=jackh0006` |
 | 8 | Published bytes = built bytes | ✅ 14/14 files hash-verified | `SHA256SUMS.txt` on every release; re-downloaded from GitHub and re-checked: MATCH |
 | 9 | What you install = what you build | ✅ same source tree | deb from `scripts/build-deb.sh` matches `dpkg -s x-messenger` (`Version: 1.5.2`) |
+| 10 | Real-device functional tasting by the author | ◐ first-party | Android arm64 + Ubuntu amd64, all flows — exact hashes in [`docs/VERIFICATION-LOG.md`](docs/VERIFICATION-LOG.md). Honest label: functional verification, *not* security audit |
 
 Fresh numbers live in the [Actions tab](https://github.com/jackh0006/X-Messenger/actions).
 **72 / 72** is not a target — it is the merge gate: a change that breaks a
 test cannot get in.
+
+### Nothing left out — where every test lives
+
+| Suite (file) | Tests | What family it owns |
+| --- | :---: | --- |
+| `test/crypto.test.js` — sealing core (v1+v2) | 13 | round-trips, tamper/wrong-phrase rejection, caps, vault |
+| `test/offline.test.js` — offline + platform boundaries | 24 | bundle purity, server gates, CA, backup, security guide honesty |
+| `test/ui-invariants.test.js` — face of the app | 10 | ids/theming/drawer/views/camera/no-skew |
+| `test/desktop.test.js` — installers & authorship | 8 | deb contents, Windows launchers, jackh0006-only credit |
+| `test/pair.test.js` — pair-v2 math | 7 | secret expansion, ordering, fingerprints, length pre-checks |
+| `test/qrparts.test.js` — split-transfer | 6 | numbering, out-of-order, fail-closed chunk rules |
+| `test/messages.test.js` — message handling | 4 | delete, backup addressing, view-once |
+| **Total** | **72** | run as one gate on GitHub's runners + docs |
+
+The **six automated CI gates** (`.github/workflows/strict-boundary.yml`):
+① no network APIs in the bundle · ② Android stays CAMERA-only · ③ no
+certificate bypasses · ④ no unverifiable claims · ⑤ version lockstep ·
+⑥ SPDX headers + third-party notices. Plus **artifact machines** in the
+release pipeline: `aapt` permission scan, `apksigner verify`, `SHA256SUMS`,
+`dpkg -s` accepted-install identity, `diff -rq` UI parity.
 
 ## Who can read your words — plain answer
 
@@ -54,11 +75,34 @@ things that *do not exist* in the app, and an absence cannot betray you:
 Scope note: this page and the repo are public on purpose — *the code*.
 Your sealed messages never touch GitHub, any server, or any AI.
 
+## Human-tested by the author — repeat it yourself in ~10 minutes
+
+**2026-10-31, jackh0006:** *"I've tested it on Android arm64 and Linux
+Ubuntu amd64 and all parts were working — it was all good."* Full flows,
+generic devices, **exact build hashes** recorded in
+[`docs/VERIFICATION-LOG.md`](docs/VERIFICATION-LOG.md) — first-party
+functional verification, and the honest label says exactly that (not a
+security audit).
+
+Make the claim **reproducible** — the strongest form of honest
+advertising:
+
+| Step | One sentence |
+| --- | --- |
+| 1 | Two devices: an Android phone (arm64) + a Linux/Ubuntu machine, or two of anything |
+| 2 | Check your SHA-256 begins with the logged ones → same builds tested |
+| 3 | On the Linux box: `x-messenger gui` → the app-window opens on `127.0.0.1` |
+| 4 | Seal a note with 4 secret words → show the QR |
+| 5 | On the phone (airplane mode on!): scan → type the words → decrypt, and read — that is the product |
+
+Four steps turn "trust me" into "watch me — then watch yourself."
+
 
 ## Contents
 
 - [Proof, not promises — verified scoreboard](#proof-not-promises--verified-scoreboard)
 - [Who can read your words — plain answer](#who-can-read-your-words--plain-answer)
+- [Human-tested by the author — repeat it yourself](#human-tested-by-the-author--repeat-it-yourself-in-10-minutes)
 - [Why it is different](#why-its-different-to-any-messenger)
 - [What people need it for](#what-people-need-it-for)
 - [30-second demo](#30-second-demo-like-teaching-a-5-year-old)
@@ -68,6 +112,7 @@ Your sealed messages never touch GitHub, any server, or any AI.
 - [Android (stays offline)](#android-stays-offline)
 - [Windows (portable, no admin, real exe)](#windows-portable-no-admin-real-exe)
 - [Security design](#security-design)
+- [Encryption protocols — plainly](#encryption-protocols--plainly-what-they-are-best-for-proved-how)
 - [Provenance — who made this](#provenance--who-made-this)
 - [Open source — verify, don't trust](#open-source--verify-dont-trust)
 - [v2 post-quantum channel (experimental)](#v2-post-quantum-channel-experimental)
@@ -251,6 +296,27 @@ setup when published. Full steps: [`WINDOWS_GUIDE.md`](WINDOWS_GUIDE.md).
 
 Read [SECURITY.md](SECURITY.md) before high-risk use.
 
+## Encryption protocols — plainly: what they are, best for, proved how
+
+| Protocol | Algorithm (standard — nothing invented) | Open-source implementation | Best for | Used when | Proved |
+| --- | --- | --- | --- | --- | --- |
+| **v1 seal `XM1`** | AES-256-GCM + PBKDF2-HMAC-SHA-256 ×600k, fresh salt+nonce every message | ✅ Web Crypto, calls readable in `core.js` | short private notes, two persons, no signal | every seal; v1 always reads | as standard (FIPS-197 since 2001, NIST GCM 2007, RFC 8018) + in-suite behavior tests; **composition audit pending** |
+| **Pair v2 + `XM2`** (experimental) | ECDH P-384 + ML-KEM-1024 (post-quantum, FIPS 203) + HKDF-SHA-384 + AES-256-GCM | ✅ Go core, source shipped in `core/`, toolchain pinned | repeat contact with no shared phrase | after face-to-face pairing + spoken fingerprint | standards-fresh + in-suite pairing tests; **experimental & unaudited banner stays on** |
+| **Vault `XMV1`** | AES-256-GCM, bounded (≤2 MiB) | ✅ `core.js` | local history encryption | when auto-lock/export is on | same family + dedicated vault tests |
+| **Local HTTPS window** | TLS 1.2+, device-local CA (or your Let's Encrypt on opt-in VPS) | ✅ system toolchain | moving the QR/window safely inside your own device | GUI serving (loopback default) | RFC family + header/TLS gates |
+
+Plain-language edition (locker-and-grinder analogies, best-for / *not*
+best-for table): [`docs/ENCRYPTION-PLAIN.md`](docs/ENCRYPTION-PLAIN.md).
+
+**Proved — in say-exactly-what senses:** ① standards from public NIST/IETF
+process, decades of open attack (ML-KEM: newest standard, fast-growing
+public review); ② open implementations — standard library code that
+anyone can read, routines invented by nobody here; ③ this app's
+*behavior* — the suite above locks round-trips, rejections, and limits;
+④ a full audit of how it is *wired together*: not done yet — stated out
+loud, since honesty is the only durable advertising.
+
+
 ## Provenance — who made this
 
 - **Author and human in charge: jackh0006.** Every final decision, the
@@ -292,6 +358,19 @@ our builds entirely and install **your own**. That is the point of open.
 | What do 72 tests actually check? | See `test/` — 7 suites from crypto round-trips to "no tracker ever loads" |
 | Could a release carry something the source does not have? | The builders produce artifacts from the same tree; `SHA256SUMS` + your own build catch any drift |
 
+### Standard repo furniture — every piece present
+
+| Standard file | Status | Role |
+| --- | :---: | --- |
+| `LICENSE` (MIT) | ✅ | can-read-can-rebuild permission |
+| `SECURITY.md` | ✅ | threat model, honest limits, private-in reporting path |
+| `NOTICE` + `THIRD-PARTY-NOTICES.md` | ✅ (CI-gated) | attribution for the standard-lib routines |
+| `CODE_OF_CONDUCT.md` / `CONTRIBUTING.md` | ✅ | how to disagree / how to add code |
+| Issue templates | ✅ `bug.yml` + `device-report.yml` + `feature_request.yml` | fast reports — including first-device-testing reports |
+| `.github/FUNDING.yml` | ✅ | the standard sponsor button (same addresses as the Donate table) |
+| CI workflows | ✅ 3, all passing | proofs run on GitHub's machines, not memory |
+| Agent guardrails | ✅ `AGENTS.md` | even AI assistance is inside written rules: no invented crypto, no hype |
+
 
 ## v2 post-quantum channel (experimental)
 
@@ -312,6 +391,8 @@ same audited Go core as the terminal demo, running in-page as WebAssembly.
 
 | File | What it teaches (5yo-simple where it matters) |
 | --- | --- |
+| `docs/ENCRYPTION-PLAIN.md` | The lockers explained in plain words: what each cipher is, open-source status, best-for / not-for, proof senses |
+| `docs/VERIFICATION-LOG.md` | The maintainer's dated two-device test session — builds, hashes, flows, honest scope |
 | `docs/GATEWAY.md` | Offline core vs optional gateway: loopback default, LAN IP / VPS domain / VPS IP with custom ports |
 | `docs/vps-domain-cloudflare.md` | House address: VPS + Cloudflare DNS + subdomain + Let’s Encrypt |
 | `docs/vps-private-mode.md` | Bedtime-story privacy: who sees what + daily safety rules |
