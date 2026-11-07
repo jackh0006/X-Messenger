@@ -42,5 +42,8 @@
   },
   "devDependencies": {
     "browserify": "^17.0.1"
+  },
+  "overrides": {
+    "sha.js": "^2.4.12"
   }
 }
