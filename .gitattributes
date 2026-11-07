@@ -1,0 +1,20 @@
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+*.so binary
+*.deb binary
+*.gz binary
+*.zip binary
+*.keystore binary
+*.jks binary
+*.p12 binary
+*.pfx binary
+
+# Generated/minified artefacts
+*.min.js binary
+*.map binary

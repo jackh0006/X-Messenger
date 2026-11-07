@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "X-Messenger"
+message: "Open-source project by Jack Hudson."
+type: software
+authors:
+  - family-names: "Hudson"
+    given-names: "Jack"
+    email: "jackh109867@gmail.com"
+repository-code: "https://github.com/jackh0006/X-Messenger"
+license: "MIT"
