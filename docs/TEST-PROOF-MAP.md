@@ -58,7 +58,7 @@ owns the evidence line.
 | `v2 pairing works over copied text end to end` | pairing without servers | pair over the face-to-face swaps/Wi-Fi-free bonds |
 | `paired v2 contact owns a user page and its thread seals` | one room per person | letters stay in each person's own bin, sealed |
 | `vault history: lock UI, auto-lock, settings wipe cover everything` | the chest's locks are complete | no corner of the safe left unlocked |
-| `backup carries thread addressing for export and restore` | restore keeps the dialogue | recovered backups rebuild whole rooms |
+| `backup carries thread addressing for export and restore` | restore keeps the dialog | recovered backups rebuild whole rooms |
 
 ## ui-invariants.test.js — 10 tests · *the face*
 
