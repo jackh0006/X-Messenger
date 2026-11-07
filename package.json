@@ -34,7 +34,7 @@
   ],
   "type": "commonjs",
   "dependencies": {
-    "@capacitor/android": "^8.5.2",
+    "@capacitor/android": "^8.6.0",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "jsqr": "^1.4.0",
